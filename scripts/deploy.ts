@@ -28,7 +28,18 @@ async function main() {
   const usdc = process.env.USDC_ADDRESS as `0x${string}` | undefined;
   if (usdc) {
     const fundManager = await viem.deployContract("FundManager", [usdc, deployer]);
-    console.log(JSON.stringify({ fundManager: fundManager.address }, null, 2));
+    await fundManager.write.setShareToken([token.address], { account: deployer });
+    await token.write.transferOwnership([fundManager.address], { account: deployer });
+    console.log(
+      JSON.stringify(
+        {
+          fundManager: fundManager.address,
+          note: "Share token owner is now FundManager — users can call subscribe(usdc) after USDC approve.",
+        },
+        null,
+        2,
+      ),
+    );
   } else {
     console.log("USDC_ADDRESS not set; skipped FundManager (set for Arc testnet deploy).");
   }

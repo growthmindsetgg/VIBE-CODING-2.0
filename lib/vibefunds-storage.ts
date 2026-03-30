@@ -29,6 +29,21 @@ export function saveFund(fund: VibeFund): void {
   writeJson(FUNDS_KEY, [fund, ...all.filter((f) => f.id !== fund.id)]);
 }
 
+export function updateFund(id: string, patch: Partial<VibeFund>): void {
+  const f = getFundById(id);
+  if (!f) return;
+  const next: VibeFund = { ...f };
+  (Object.keys(patch) as (keyof VibeFund)[]).forEach((k) => {
+    const v = patch[k];
+    if (v === undefined) {
+      delete (next as Record<string, unknown>)[k as string];
+    } else {
+      (next as Record<string, unknown>)[k as string] = v;
+    }
+  });
+  saveFund(next);
+}
+
 export function getFundById(id: string): VibeFund | undefined {
   return getFunds().find((f) => f.id === id);
 }

@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useVibeFunds } from "@/hooks/use-vibefunds";
+import { parseOptionalAddress } from "@/lib/parse-address";
 import type { AgentPersonality, VibeFund } from "@/lib/types/fund";
 
 const personalities: { id: AgentPersonality; label: string; hint: string }[] = [
@@ -25,7 +26,11 @@ export default function CreateFundPage() {
   const [name, setName] = useState("");
   const [personality, setPersonality] = useState<AgentPersonality>("balanced");
   const [deposit, setDeposit] = useState("1000");
+  const [shareAddr, setShareAddr] = useState("");
+  const [nftAddr, setNftAddr] = useState("");
+  const [managerAddr, setManagerAddr] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const canSubmit = useMemo(() => {
     if (!isConnected || !address) return false;
@@ -34,11 +39,26 @@ export default function CreateFundPage() {
     return Number.isFinite(n) && n > 0;
   }, [address, deposit, isConnected, name]);
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     if (!address) {
       setError("Connect your wallet first.");
+      return;
+    }
+    const st = parseOptionalAddress(shareAddr);
+    const nt = parseOptionalAddress(nftAddr);
+    const fm = parseOptionalAddress(managerAddr);
+    if (shareAddr.trim() && !st) {
+      setError("Invalid share token address.");
+      return;
+    }
+    if (nftAddr.trim() && !nt) {
+      setError("Invalid NFT address.");
+      return;
+    }
+    if (managerAddr.trim() && !fm) {
+      setError("Invalid FundManager address.");
       return;
     }
     const fund: VibeFund = {
@@ -49,8 +69,16 @@ export default function CreateFundPage() {
       createdAt: Date.now(),
       initialDepositUsdc: deposit.trim(),
     };
-    addFund(fund);
-    router.push(`/fund/${fund.id}`);
+    if (st) fund.shareTokenAddress = st;
+    if (nt) fund.nftAddress = nt;
+    if (fm) fund.fundManagerAddress = fm;
+    setSubmitting(true);
+    try {
+      await addFund(fund);
+      router.push(`/fund/${fund.id}`);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -106,17 +134,34 @@ export default function CreateFundPage() {
                 required
               />
               <p className="text-xs text-cyan-200/45">
-                This is recorded locally for the MVP dashboard. Fund the vault on-chain separately once
-                `FundManager` is deployed.
+                Recorded for the dashboard. Use Subscribe or Deposit on the fund page once contracts are
+                linked.
               </p>
+            </div>
+            <div className="space-y-2 rounded-xl border border-white/10 bg-black/20 p-4">
+              <p className="text-xs font-medium uppercase tracking-wider text-cyan-400/80">
+                Optional · deploy output
+              </p>
+              <div className="space-y-1">
+                <Label htmlFor="sa">Share token</Label>
+                <Input id="sa" placeholder="0x…" value={shareAddr} onChange={(e) => setShareAddr(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="na">NFT</Label>
+                <Input id="na" placeholder="0x…" value={nftAddr} onChange={(e) => setNftAddr(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="ma">FundManager</Label>
+                <Input id="ma" placeholder="0x…" value={managerAddr} onChange={(e) => setManagerAddr(e.target.value)} />
+              </div>
             </div>
             {error && <p className="text-sm text-red-300/90">{error}</p>}
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="ghost" asChild>
                 <Link href="/">Cancel</Link>
               </Button>
-              <Button type="submit" disabled={!canSubmit}>
-                Launch fund
+              <Button type="submit" disabled={!canSubmit || submitting}>
+                {submitting ? "Saving…" : "Launch fund"}
               </Button>
             </div>
           </form>

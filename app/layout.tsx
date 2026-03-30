@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Web3Provider } from "@/components/providers/web3-provider";
+import { VibeFundsProvider } from "@/components/providers/vibe-funds-provider";
 import { SiteHeader } from "@/components/layout/site-header";
 
 const geistSans = Geist({
@@ -29,8 +30,10 @@ export default function RootLayout({
     <html lang="en" className="dark" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} min-h-screen antialiased`}>
         <Web3Provider>
-          <SiteHeader />
-          {children}
+          <VibeFundsProvider>
+            <SiteHeader />
+            {children}
+          </VibeFundsProvider>
         </Web3Provider>
       </body>
     </html>

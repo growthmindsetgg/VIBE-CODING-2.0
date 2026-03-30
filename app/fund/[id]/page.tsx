@@ -2,17 +2,22 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ContractLinker } from "@/components/vibefunds/contract-linker";
 import { MicroActions } from "@/components/vibefunds/micro-actions";
+import { OnchainFundPanel } from "@/components/vibefunds/onchain-fund-panel";
+import { useVibeFunds } from "@/hooks/use-vibefunds";
 import { agentStatusLabel, simulatedNavBps } from "@/lib/agent/simulation";
-import { bumpHolding, getFundById, getHoldings, getTraining } from "@/lib/vibefunds-storage";
+import { bumpHolding, getHoldings, getTraining } from "@/lib/vibefunds-storage";
 
 export default function FundDetailPage() {
   const params = useParams();
   const id = typeof params.id === "string" ? params.id : "";
-  const fund = id ? getFundById(id) : undefined;
+  const { funds, ready } = useVibeFunds();
+  const fund = useMemo(() => funds.find((f) => f.id === id), [funds, id]);
+
   const [held, setHeld] = useState("0");
   const [mockNote, setMockNote] = useState<string | null>(null);
 
@@ -25,14 +30,24 @@ export default function FundDetailPage() {
   const nav = fund ? simulatedNavBps(fund) : 0;
   const status = fund ? agentStatusLabel(fund, training.xp) : "";
 
-  if (!id || !fund) {
+  if (!id || (ready && !fund)) {
     return (
       <div className="mx-auto max-w-md space-y-6 px-4 py-24 text-center">
-        <h1 className="text-2xl font-semibold text-white">Fund not found</h1>
-        <p className="text-cyan-200/60">This id is not in local storage. Try the marketplace.</p>
+        <h1 className="text-2xl font-semibold text-white">
+          {!ready ? "Loading…" : "Fund not found"}
+        </h1>
+        {ready && <p className="text-cyan-200/60">This id is not in local storage. Try the marketplace.</p>}
         <Button asChild>
           <Link href="/marketplace">Back to marketplace</Link>
         </Button>
+      </div>
+    );
+  }
+
+  if (!fund) {
+    return (
+      <div className="mx-auto max-w-md px-4 py-24 text-center text-cyan-200/60">
+        Loading fund…
       </div>
     );
   }
@@ -44,6 +59,8 @@ export default function FundDetailPage() {
           <Link href="/marketplace">← Marketplace</Link>
         </Button>
       </div>
+
+      <ContractLinker fund={fund} />
 
       <Card>
         <CardHeader>
@@ -62,7 +79,7 @@ export default function FundDetailPage() {
               </p>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/30 p-4 font-mono text-sm">
-              <p className="text-cyan-200/50">Your share units (local)</p>
+              <p className="text-cyan-200/50">Your share units (local mock)</p>
               <p className="mt-1 text-2xl text-fuchsia-300">{held}</p>
             </div>
           </div>
@@ -70,27 +87,32 @@ export default function FundDetailPage() {
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 const v = bumpHolding(fund.id, 1);
                 setHeld(v);
-                setMockNote("Bought +1 unit (local ledger). Wire ERC-20 mint after pool address is set.");
+                setMockNote("Local mock +1 (does not mint on-chain). Use Subscribe for real shares.");
               }}
             >
-              Buy +1 unit (mock)
+              Mock +1 unit
             </Button>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 const v = bumpHolding(fund.id, -1);
                 setHeld(v);
-                setMockNote("Sold 1 unit on the local ledger.");
+                setMockNote("Local mock −1.");
               }}
             >
-              Sell 1 unit (mock)
+              Mock −1 unit
             </Button>
           </div>
           {mockNote && <p className="text-xs text-cyan-200/55">{mockNote}</p>}
+
+          <OnchainFundPanel fund={fund} />
 
           <MicroActions
             onInstrumentMock={() =>
@@ -99,11 +121,11 @@ export default function FundDetailPage() {
           />
 
           <div className="rounded-xl border border-dashed border-cyan-500/20 bg-cyan-500/5 p-4 text-xs text-cyan-200/55">
-            <p className="font-mono uppercase tracking-widest text-cyan-400/80">Contracts</p>
+            <p className="font-mono uppercase tracking-widest text-cyan-400/80">Contracts (saved)</p>
             <ul className="mt-2 space-y-1">
-              <li>Share token: {fund.shareTokenAddress ?? "not linked"}</li>
-              <li>NFT mirror: {fund.nftAddress ?? "not linked"}</li>
-              <li>FundManager: {fund.fundManagerAddress ?? "not linked"}</li>
+              <li>Share token: {fund.shareTokenAddress ?? "—"}</li>
+              <li>NFT mirror: {fund.nftAddress ?? "—"}</li>
+              <li>FundManager: {fund.fundManagerAddress ?? "—"}</li>
             </ul>
           </div>
         </CardContent>
