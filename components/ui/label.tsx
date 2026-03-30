@@ -1,0 +1,11 @@
+import { type LabelHTMLAttributes } from "react";
+import { cn } from "@/lib/utils";
+
+export function Label({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {
+  return (
+    <label
+      className={cn("text-xs font-medium uppercase tracking-wider text-cyan-200/75", className)}
+      {...props}
+    />
+  );
+}
