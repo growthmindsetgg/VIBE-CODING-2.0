@@ -42,7 +42,8 @@ export function VibeFundsProvider({ children }: { children: ReactNode }) {
     try {
       const r = await fetch("/api/funds", { cache: "no-store" });
       if (r.ok) {
-        remote = await r.json();
+        const data: unknown = await r.json();
+        remote = Array.isArray(data) ? (data as VibeFund[]) : [];
       }
     } catch {
       /* offline */

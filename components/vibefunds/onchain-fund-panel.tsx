@@ -60,13 +60,19 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
     query: { enabled: Boolean(usdc && address && fm) },
   });
 
-  const { data: shareConfigured } = useReadContract({
+  const {
+    data: shareConfigured,
+    isError: shareCfgError,
+    isPending: shareCfgPending,
+  } = useReadContract({
     address: fm,
     abi: fundManagerAbi,
     functionName: "shareTokenConfigured",
     chainId: arcTestnet.id,
     query: { enabled: Boolean(fm) },
   });
+
+  const subscribeReady = shareConfigured === true;
 
   const shareHuman = useMemo(() => {
     if (shareBal === undefined) return "—";
@@ -98,7 +104,7 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
   const handleSubscribe = () =>
     run("subscribe", async () => {
       if (!address || !usdc || !fm) throw new Error("Missing USDC or FundManager address");
-      if (!shareConfigured) throw new Error("FundManager share token not configured on-chain");
+      if (!subscribeReady) throw new Error("FundManager is not ready for subscribe (configure share token on-chain).");
       const amount = parseUnits(subscribeUsdc.trim() || "0", 6);
       if (amount === BigInt(0)) throw new Error("Enter USDC amount");
 
@@ -217,10 +223,17 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {fm && shareConfigured === false && (
+        {fm && shareCfgError && (
           <p className="text-xs text-amber-200/80">
-            FundManager exists but `setShareToken` was not run (or wrong deployment). `subscribe` will
-            revert until the manager owns the share token.
+            Could not read this FundManager on Arc (wrong address, old bytecode without share config, or
+            RPC issue). Deposit may still work if the vault matches.
+          </p>
+        )}
+
+        {fm && !shareCfgError && shareConfigured === false && (
+          <p className="text-xs text-amber-200/80">
+            FundManager exists but setShareToken was not run. Subscribe will revert until the manager owns
+            the share token (redeploy + link).
           </p>
         )}
 
@@ -238,8 +251,12 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
                 onChange={(e) => setSubscribeUsdc(e.target.value)}
                 className="sm:max-w-[140px]"
               />
-              <Button type="button" disabled={Boolean(busy) || !shareConfigured} onClick={handleSubscribe}>
-                {busy === "subscribe" ? "Working…" : "Subscribe"}
+              <Button
+                type="button"
+                disabled={Boolean(busy) || !subscribeReady || shareCfgPending}
+                onClick={handleSubscribe}
+              >
+                {busy === "subscribe" ? "Working…" : shareCfgPending ? "Checking…" : "Subscribe"}
               </Button>
             </div>
           </div>

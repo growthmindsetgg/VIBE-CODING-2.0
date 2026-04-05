@@ -12,9 +12,15 @@ import { useVibeFunds } from "@/hooks/use-vibefunds";
 import { agentStatusLabel, simulatedNavBps } from "@/lib/agent/simulation";
 import { bumpHolding, getHoldings, getTraining } from "@/lib/vibefunds-storage";
 
+function paramId(raw: string | string[] | undefined): string {
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw) && raw[0]) return raw[0];
+  return "";
+}
+
 export default function FundDetailPage() {
   const params = useParams();
-  const id = typeof params.id === "string" ? params.id : "";
+  const id = paramId(params.id);
   const { funds, ready } = useVibeFunds();
   const fund = useMemo(() => funds.find((f) => f.id === id), [funds, id]);
 
@@ -30,13 +36,23 @@ export default function FundDetailPage() {
   const nav = fund ? simulatedNavBps(fund) : 0;
   const status = fund ? agentStatusLabel(fund, training.xp) : "";
 
-  if (!id || (ready && !fund)) {
+  if (!id) {
     return (
       <div className="mx-auto max-w-md space-y-6 px-4 py-24 text-center">
-        <h1 className="text-2xl font-semibold text-white">
-          {!ready ? "Loading…" : "Fund not found"}
-        </h1>
-        {ready && <p className="text-cyan-200/60">This id is not in local storage. Try the marketplace.</p>}
+        <h1 className="text-2xl font-semibold text-white">Invalid fund link</h1>
+        <p className="text-cyan-200/60">Missing fund id in the URL.</p>
+        <Button asChild>
+          <Link href="/marketplace">Back to marketplace</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  if (ready && !fund) {
+    return (
+      <div className="mx-auto max-w-md space-y-6 px-4 py-24 text-center">
+        <h1 className="text-2xl font-semibold text-white">Fund not found</h1>
+        <p className="text-cyan-200/60">This id is not in your fund list. Open the marketplace or create a fund.</p>
         <Button asChild>
           <Link href="/marketplace">Back to marketplace</Link>
         </Button>

@@ -13,12 +13,13 @@ export type VibeFundRow = {
 };
 
 export function rowToFund(row: VibeFundRow): VibeFund {
+  const createdAt = Number(row.created_at);
   return {
     id: row.id,
     name: row.name,
     personality: row.personality as AgentPersonality,
     creator: row.creator as `0x${string}`,
-    createdAt: row.created_at,
+    createdAt: Number.isFinite(createdAt) ? createdAt : 0,
     initialDepositUsdc: row.initial_deposit_usdc,
     shareTokenAddress: (row.share_token_address as `0x${string}`) || undefined,
     nftAddress: (row.nft_address as `0x${string}`) || undefined,

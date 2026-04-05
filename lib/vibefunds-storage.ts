@@ -21,7 +21,8 @@ function writeJson(key: string, value: unknown) {
 }
 
 export function getFunds(): VibeFund[] {
-  return readJson<VibeFund[]>(FUNDS_KEY, []);
+  const data = readJson<unknown>(FUNDS_KEY, []);
+  return Array.isArray(data) ? (data as VibeFund[]) : [];
 }
 
 export function saveFund(fund: VibeFund): void {
@@ -95,8 +96,21 @@ export function setTraining(s: AgentTrainingState): void {
   writeJson(TRAINING_KEY, s);
 }
 
+function isLeaderboardEntry(x: unknown): x is LeaderboardEntry {
+  if (!x || typeof x !== "object") return false;
+  const e = x as Record<string, unknown>;
+  return (
+    typeof e.address === "string" &&
+    e.address.startsWith("0x") &&
+    typeof e.score === "number" &&
+    Number.isFinite(e.score)
+  );
+}
+
 export function getLeaderboard(): LeaderboardEntry[] {
-  return readJson<LeaderboardEntry[]>(BOARD_KEY, []);
+  const data = readJson<unknown>(BOARD_KEY, []);
+  if (!Array.isArray(data)) return [];
+  return data.filter(isLeaderboardEntry);
 }
 
 export function upsertLeaderboard(entry: LeaderboardEntry): void {
@@ -110,7 +124,9 @@ export type Holdings = Record<string, string>;
 
 /** Human-readable "share units" per fund id */
 export function getHoldings(): Holdings {
-  return readJson<Holdings>(HOLDINGS_KEY, {});
+  const data = readJson<unknown>(HOLDINGS_KEY, {});
+  if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+  return data as Holdings;
 }
 
 export function setHolding(fundId: string, shareUnits: string): void {

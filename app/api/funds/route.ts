@@ -11,7 +11,14 @@ function validateFund(body: unknown): VibeFund | null {
   const o = body as Record<string, unknown>;
   if (typeof o.id !== "string" || typeof o.name !== "string") return null;
   if (typeof o.creator !== "string" || !isAddress(o.creator)) return null;
-  if (typeof o.createdAt !== "number") return null;
+  const createdAtRaw = o.createdAt;
+  const createdAt =
+    typeof createdAtRaw === "number" && Number.isFinite(createdAtRaw)
+      ? createdAtRaw
+      : typeof createdAtRaw === "string"
+        ? Number(createdAtRaw)
+        : NaN;
+  if (!Number.isFinite(createdAt)) return null;
   if (typeof o.initialDepositUsdc !== "string") return null;
   const p = o.personality as string;
   if (!["aggressive", "balanced", "degen", "cautious"].includes(p)) return null;
@@ -20,7 +27,7 @@ function validateFund(body: unknown): VibeFund | null {
     name: o.name,
     personality: p as AgentPersonality,
     creator: o.creator as `0x${string}`,
-    createdAt: o.createdAt,
+    createdAt,
     initialDepositUsdc: o.initialDepositUsdc,
   };
   if (typeof o.shareTokenAddress === "string" && isAddress(o.shareTokenAddress)) {
