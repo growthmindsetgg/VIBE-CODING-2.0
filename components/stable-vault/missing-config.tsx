@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 type GateProps = {
-  saveBrowserOverrides: (p: { vault: string; usdc: string; eurc: string }) => void;
+  saveBrowserOverrides: (p: { vault?: string; usdc: string; eurc: string }) => void;
   clearBrowserOverrides: () => void;
   storedSnapshot: { vault?: string; usdc?: string; eurc?: string };
 };
@@ -28,11 +28,15 @@ export function MissingStableVaultConfig({ saveBrowserOverrides, clearBrowserOve
   function onSave(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (!isAddress(vault.trim()) || !isAddress(usdc.trim()) || !isAddress(eurc.trim())) {
-      setErr("Each field must be a valid 0x address (42 chars).");
+    if (!isAddress(usdc.trim()) || !isAddress(eurc.trim())) {
+      setErr("USDC and EURC must be valid 0x addresses.");
       return;
     }
-    saveBrowserOverrides({ vault, usdc, eurc });
+    if (vault.trim() && !isAddress(vault.trim())) {
+      setErr("Vault must be empty or a valid 0x address.");
+      return;
+    }
+    saveBrowserOverrides({ vault: vault.trim() || undefined, usdc, eurc });
   }
 
   return (
@@ -74,8 +78,8 @@ export function MissingStableVaultConfig({ saveBrowserOverrides, clearBrowserOve
         <CardContent>
           <form onSubmit={onSave} className="space-y-3">
             <div className="space-y-1">
-              <Label htmlFor="o-vault">StableSwapMicroVault</Label>
-              <Input id="o-vault" value={vault} onChange={(e) => setVault(e.target.value)} placeholder="0x…" />
+              <Label htmlFor="o-vault">StableSwapMicroVault (optional until deployed)</Label>
+              <Input id="o-vault" value={vault} onChange={(e) => setVault(e.target.value)} placeholder="0x… (leave blank for placeholder)" />
             </div>
             <div className="space-y-1">
               <Label htmlFor="o-usdc">USDC token</Label>

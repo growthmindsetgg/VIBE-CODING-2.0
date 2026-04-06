@@ -6,18 +6,18 @@ import { eurcAddress, stableVaultAddress, usdcAddress } from "@/lib/contracts/ad
 
 const STORAGE_KEY = "vibefunds_stable_addresses_v1";
 
-type Stored = {
+export type StoredStableAddresses = {
   vault?: string;
   usdc?: string;
   eurc?: string;
 };
 
-function loadStored(): Stored {
+function loadStored(): StoredStableAddresses {
   if (typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return {};
-    const p = JSON.parse(raw) as Stored;
+    const p = JSON.parse(raw) as StoredStableAddresses;
     return typeof p === "object" && p !== null ? p : {};
   } catch {
     return {};
@@ -33,11 +33,23 @@ function pick(envVal: string | undefined, override: string | undefined): `0x${st
 }
 
 export function useStableVaultAddresses() {
-  const [stored, setStored] = useState<Stored>({});
+  const [stored, setStored] = useState<StoredStableAddresses>({});
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     setStored(loadStored());
   }, []);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY || e.key === null) reload();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [reload]);
 
   const envVault = stableVaultAddress();
   const envUsdc = usdcAddress();
@@ -47,13 +59,17 @@ export function useStableVaultAddresses() {
   const usdc = useMemo(() => pick(envUsdc, stored.usdc), [envUsdc, stored.usdc]);
   const eurc = useMemo(() => pick(envEurc, stored.eurc), [envEurc, stored.eurc]);
 
+  /** USDC + EURC — enough for balances & swap UI (vault optional for preview). */
+  const tokensReady = Boolean(usdc && eurc);
+  /** Full pool wiring including vault. */
   const ready = Boolean(vault && usdc && eurc);
 
-  const saveBrowserOverrides = useCallback((p: { vault: string; usdc: string; eurc: string }) => {
-    const next: Stored = {
-      vault: p.vault.trim() || undefined,
+  const saveBrowserOverrides = useCallback((p: { vault?: string; usdc: string; eurc: string }) => {
+    const next: StoredStableAddresses = {
+      ...loadStored(),
       usdc: p.usdc.trim() || undefined,
       eurc: p.eurc.trim() || undefined,
+      vault: p.vault?.trim() ? p.vault.trim() : undefined,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     setStored(next);
@@ -69,8 +85,10 @@ export function useStableVaultAddresses() {
     usdc,
     eurc,
     ready,
+    tokensReady,
     saveBrowserOverrides,
     clearBrowserOverrides,
     storedSnapshot: stored,
+    reloadStored: reload,
   };
 }
