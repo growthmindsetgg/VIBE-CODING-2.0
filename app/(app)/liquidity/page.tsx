@@ -17,7 +17,15 @@ export default function LiquidityPage() {
   const config = useConfig();
   const { address, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
-  const { vault, usdc: tokenUsdc, eurc: tokenEurc, ready } = useStableVaultAddresses();
+  const {
+    vault,
+    usdc: tokenUsdc,
+    eurc: tokenEurc,
+    ready,
+    saveBrowserOverrides,
+    clearBrowserOverrides,
+    storedSnapshot,
+  } = useStableVaultAddresses();
 
   const [depU, setDepU] = useState("100");
   const [depE, setDepE] = useState("100");
@@ -241,7 +249,11 @@ export default function LiquidityPage() {
           </h1>
           <p className="mt-2 text-sm text-zinc-600">Provide USDC + EURC to the shared stable pool.</p>
         </div>
-        <MissingStableVaultConfig />
+        <MissingStableVaultConfig
+          saveBrowserOverrides={saveBrowserOverrides}
+          clearBrowserOverrides={clearBrowserOverrides}
+          storedSnapshot={storedSnapshot}
+        />
       </div>
     );
   }

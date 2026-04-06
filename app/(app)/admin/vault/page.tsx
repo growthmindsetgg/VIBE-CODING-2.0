@@ -24,7 +24,13 @@ export default function AdminVaultPage() {
   const config = useConfig();
   const { address, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
-  const { vault, ready } = useStableVaultAddresses();
+  const {
+    vault,
+    ready,
+    saveBrowserOverrides,
+    clearBrowserOverrides,
+    storedSnapshot,
+  } = useStableVaultAddresses();
 
   const [unlocked, setUnlocked] = useState(false);
   const [pw, setPw] = useState("");
@@ -201,7 +207,11 @@ export default function AdminVaultPage() {
       </div>
 
       {!ready ? (
-        <MissingStableVaultConfig />
+        <MissingStableVaultConfig
+          saveBrowserOverrides={saveBrowserOverrides}
+          clearBrowserOverrides={clearBrowserOverrides}
+          storedSnapshot={storedSnapshot}
+        />
       ) : (
         <>
           <Card variant="brutal" className="border-[#9146ff]/30">

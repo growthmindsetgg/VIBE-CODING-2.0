@@ -21,7 +21,15 @@ export default function SwapPage() {
   const config = useConfig();
   const { address, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
-  const { vault, usdc: usdcAddr, eurc: eurcAddr, ready } = useStableVaultAddresses();
+  const {
+    vault,
+    usdc: usdcAddr,
+    eurc: eurcAddr,
+    ready,
+    saveBrowserOverrides,
+    clearBrowserOverrides,
+    storedSnapshot,
+  } = useStableVaultAddresses();
 
   const [paySide, setPaySide] = useState<PaySide>("USDC");
   const [amountIn, setAmountIn] = useState("25");
@@ -137,7 +145,11 @@ export default function SwapPage() {
           <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl font-bold uppercase text-black">Swap</h1>
           <p className="mt-2 text-sm text-zinc-600">Trade USDC and EURC through the configured stable pool.</p>
         </div>
-        <MissingStableVaultConfig />
+        <MissingStableVaultConfig
+          saveBrowserOverrides={saveBrowserOverrides}
+          clearBrowserOverrides={clearBrowserOverrides}
+          storedSnapshot={storedSnapshot}
+        />
       </div>
     );
   }
