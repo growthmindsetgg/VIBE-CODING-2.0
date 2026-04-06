@@ -8,6 +8,13 @@ const DEFAULT_EURC = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a" as const;
 async function main() {
   const { viem } = await network.connect();
   const [wallet] = await viem.getWalletClients();
+  if (!wallet?.account) {
+    console.error(
+      "No local signer: set DEPLOYER_PRIVATE_KEY for arc-testnet, or use accounts: \"remote\" with a connected hardware wallet.",
+    );
+    process.exitCode = 1;
+    return;
+  }
   const deployer = wallet.account.address;
 
   const usdc = (process.env.USDC_ADDRESS || DEFAULT_USDC) as `0x${string}`;
