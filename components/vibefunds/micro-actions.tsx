@@ -53,13 +53,13 @@ export function MicroActions({ onInstrumentMock }: MicroActionsProps) {
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-white/10 bg-black/25 p-4">
-      <p className="font-mono text-xs uppercase tracking-widest text-cyan-400/80">Micro-payments</p>
+    <div className="space-y-3 rounded-lg border-[2px] border-black/15 bg-[#f4f2ff] p-4">
+      <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-zinc-500">Micro-payments</p>
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
           size="sm"
-          variant="outline"
+          variant="brutalOutline"
           disabled={!isConnected || isPending || !token}
           onClick={() => pay(MICRO_USDC, "Rebalance drip")}
         >
@@ -68,7 +68,7 @@ export function MicroActions({ onInstrumentMock }: MicroActionsProps) {
         <Button
           type="button"
           size="sm"
-          variant="outline"
+          variant="brutalOutline"
           disabled={!isConnected || isPending || !token}
           onClick={() => pay(INSTRUMENT_USDC, "Instrument")}
         >
@@ -77,7 +77,7 @@ export function MicroActions({ onInstrumentMock }: MicroActionsProps) {
         <Button
           type="button"
           size="sm"
-          variant="ghost"
+          variant="brutalGhost"
           disabled={!isConnected}
           onClick={() => {
             onInstrumentMock?.();
@@ -88,22 +88,22 @@ export function MicroActions({ onInstrumentMock }: MicroActionsProps) {
         </Button>
       </div>
       {!isConnected && (
-        <p className="text-xs text-amber-200/70">Connect a wallet on Arc to send real USDC micro-pays.</p>
+        <p className="text-xs text-amber-800">Connect a wallet on Arc to send real USDC micro-pays.</p>
       )}
       {isConnected && !token && (
-        <p className="text-xs text-amber-200/80">
-          Add <span className="font-mono text-cyan-200/90">NEXT_PUBLIC_USDC_ADDRESS</span> (official Arc testnet
+        <p className="text-xs text-amber-900">
+          Add <span className="font-mono text-zinc-800">NEXT_PUBLIC_USDC_ADDRESS</span> (official Arc testnet
           USDC) to enable on-chain transfers.
         </p>
       )}
       {isConnected && token && !treasuryFromEnv && (
-        <p className="text-xs text-cyan-200/55">
+        <p className="text-xs text-zinc-600">
           No <span className="font-mono">NEXT_PUBLIC_PROTOCOL_TREASURY</span> set — USDC sends go to your
           connected address (fine for testnet demos). Set the env var to route funds elsewhere.
         </p>
       )}
-      {lastTx && <p className="text-xs text-emerald-300/90">{lastTx}</p>}
-      {err && <p className="text-xs text-red-300/90">{err}</p>}
+      {lastTx && <p className="text-xs font-medium text-emerald-700">{lastTx}</p>}
+      {err && <p className="text-xs font-medium text-red-600">{err}</p>}
     </div>
   );
 }

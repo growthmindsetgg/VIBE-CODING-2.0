@@ -68,10 +68,12 @@ export function ContractLinker({ fund }: ContractLinkerProps) {
   }
 
   return (
-    <Card className="border-dashed border-cyan-500/25">
+    <Card variant="brutal" className="border-dashed border-black/40">
       <CardHeader>
-        <CardTitle className="text-base">Link deployed contracts</CardTitle>
-        <CardDescription>
+        <CardTitle variant="brutal" className="text-base">
+          Link deployed contracts
+        </CardTitle>
+        <CardDescription variant="brutal">
           Paste addresses from the Arc deploy script output. Saves locally and syncs to Supabase when
           configured.
         </CardDescription>
@@ -90,7 +92,7 @@ export function ContractLinker({ fund }: ContractLinkerProps) {
             <Label htmlFor="cfm">FundManager</Label>
             <Input id="cfm" placeholder="0x…" value={manager} onChange={(e) => setManager(e.target.value)} />
           </div>
-          {err && <p className="text-xs text-red-300/90">{err}</p>}
+          {err && <p className="text-xs font-medium text-red-600">{err}</p>}
           <Button type="submit" size="sm" disabled={saving}>
             {saving ? "Saving…" : "Save addresses"}
           </Button>

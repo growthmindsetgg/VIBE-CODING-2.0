@@ -38,11 +38,11 @@ export default function FundDetailPage() {
 
   if (!id) {
     return (
-      <div className="mx-auto max-w-md space-y-6 px-4 py-24 text-center">
-        <h1 className="text-2xl font-semibold text-white">Invalid fund link</h1>
-        <p className="text-cyan-200/60">Missing fund id in the URL.</p>
+      <div className="mx-auto max-w-md space-y-6 py-12 text-center">
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-black">Invalid fund link</h1>
+        <p className="text-zinc-600">Missing fund id in the URL.</p>
         <Button asChild>
-          <Link href="/marketplace">Back to marketplace</Link>
+          <Link href="/marketplace">Back to marketplace →</Link>
         </Button>
       </div>
     );
@@ -50,60 +50,61 @@ export default function FundDetailPage() {
 
   if (ready && !fund) {
     return (
-      <div className="mx-auto max-w-md space-y-6 px-4 py-24 text-center">
-        <h1 className="text-2xl font-semibold text-white">Fund not found</h1>
-        <p className="text-cyan-200/60">This id is not in your fund list. Open the marketplace or create a fund.</p>
+      <div className="mx-auto max-w-md space-y-6 py-12 text-center">
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-black">Fund not found</h1>
+        <p className="text-zinc-600">
+          This id is not in your fund list. Open the marketplace or create a fund.
+        </p>
         <Button asChild>
-          <Link href="/marketplace">Back to marketplace</Link>
+          <Link href="/marketplace">Back to marketplace →</Link>
         </Button>
       </div>
     );
   }
 
   if (!fund) {
-    return (
-      <div className="mx-auto max-w-md px-4 py-24 text-center text-cyan-200/60">
-        Loading fund…
-      </div>
-    );
+    return <div className="mx-auto max-w-md py-24 text-center text-zinc-500">Loading fund…</div>;
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 px-4 py-12 sm:py-16">
+    <div className="mx-auto max-w-3xl space-y-8">
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <Button variant="ghost" size="sm" asChild>
+        <Button variant="brutalGhost" size="sm" asChild>
           <Link href="/marketplace">← Marketplace</Link>
         </Button>
       </div>
 
       <ContractLinker fund={fund} />
 
-      <Card>
+      <Card variant="brutal">
         <CardHeader>
-          <CardTitle className="text-2xl">{fund.name}</CardTitle>
-          <CardDescription className="capitalize">
-            {fund.personality} agent · fund id <span className="font-mono text-cyan-300/80">{fund.id}</span>
+          <CardTitle variant="brutal" className="text-2xl">
+            {fund.name}
+          </CardTitle>
+          <CardDescription variant="brutal" className="capitalize">
+            {fund.personality} agent · fund id{" "}
+            <span className="font-mono text-[#5c16c5]">{fund.id}</span>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-white/10 bg-black/30 p-4 font-mono text-sm">
-              <p className="text-cyan-200/50">NAV Δ (sim)</p>
-              <p className={`mt-1 text-2xl ${nav >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+            <div className="rounded-lg border-[2px] border-black/15 bg-[#f4f2ff] p-4 font-mono text-sm">
+              <p className="text-zinc-500">NAV Δ (sim)</p>
+              <p className={`mt-1 text-2xl font-bold ${nav >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                 {nav >= 0 ? "+" : ""}
                 {nav} bps
               </p>
             </div>
-            <div className="rounded-xl border border-white/10 bg-black/30 p-4 font-mono text-sm">
-              <p className="text-cyan-200/50">Your share units (local mock)</p>
-              <p className="mt-1 text-2xl text-fuchsia-300">{held}</p>
+            <div className="rounded-lg border-[2px] border-black/15 bg-[#f4f2ff] p-4 font-mono text-sm">
+              <p className="text-zinc-500">Your share units (local mock)</p>
+              <p className="mt-1 text-2xl font-bold text-[#9146ff]">{held}</p>
             </div>
           </div>
-          <p className="text-sm text-cyan-100/70">{status}</p>
+          <p className="text-sm text-zinc-700">{status}</p>
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
-              variant="ghost"
+              variant="brutalOutline"
               size="sm"
               onClick={() => {
                 const v = bumpHolding(fund.id, 1);
@@ -115,7 +116,7 @@ export default function FundDetailPage() {
             </Button>
             <Button
               type="button"
-              variant="ghost"
+              variant="brutalOutline"
               size="sm"
               onClick={() => {
                 const v = bumpHolding(fund.id, -1);
@@ -126,7 +127,7 @@ export default function FundDetailPage() {
               Mock −1 unit
             </Button>
           </div>
-          {mockNote && <p className="text-xs text-cyan-200/55">{mockNote}</p>}
+          {mockNote && <p className="text-xs text-zinc-500">{mockNote}</p>}
 
           <OnchainFundPanel fund={fund} />
 
@@ -136,9 +137,11 @@ export default function FundDetailPage() {
             }
           />
 
-          <div className="rounded-xl border border-dashed border-cyan-500/20 bg-cyan-500/5 p-4 text-xs text-cyan-200/55">
-            <p className="font-mono uppercase tracking-widest text-cyan-400/80">Contracts (saved)</p>
-            <ul className="mt-2 space-y-1">
+          <div className="rounded-lg border-[2px] border-dashed border-black/25 bg-[#eef2ff] p-4 text-xs text-zinc-600">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+              Contracts (saved)
+            </p>
+            <ul className="mt-2 space-y-1 font-mono">
               <li>Share token: {fund.shareTokenAddress ?? "—"}</li>
               <li>NFT mirror: {fund.nftAddress ?? "—"}</li>
               <li>FundManager: {fund.fundManagerAddress ?? "—"}</li>

@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Web3Provider } from "@/components/providers/web3-provider";
 import { VibeFundsProvider } from "@/components/providers/vibe-funds-provider";
-import { SiteHeader } from "@/components/layout/site-header";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,6 +12,12 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const display = Space_Grotesk({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -27,13 +32,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable} min-h-screen antialiased`}>
+    <html lang="en" suppressHydrationWarning>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} ${display.variable} min-h-screen antialiased`}
+      >
         <Web3Provider>
-          <VibeFundsProvider>
-            <SiteHeader />
-            {children}
-          </VibeFundsProvider>
+          <VibeFundsProvider>{children}</VibeFundsProvider>
         </Web3Provider>
       </body>
     </html>

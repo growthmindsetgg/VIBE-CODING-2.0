@@ -179,10 +179,12 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
 
   if (!token && !fm) {
     return (
-      <Card className="border-dashed border-cyan-500/30">
+      <Card variant="brutal" className="border-dashed border-black/40">
         <CardHeader>
-          <CardTitle className="text-base">On-chain</CardTitle>
-          <CardDescription>
+          <CardTitle variant="brutal" className="text-base">
+            On-chain
+          </CardTitle>
+          <CardDescription variant="brutal">
             Add share token and FundManager addresses (from deploy output) to enable live reads and
             transactions.
           </CardDescription>
@@ -193,10 +195,12 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
 
   if (!isConnected) {
     return (
-      <Card>
+      <Card variant="brutal">
         <CardHeader>
-          <CardTitle className="text-base">On-chain</CardTitle>
-          <CardDescription>Connect your wallet on Arc to trade or deposit.</CardDescription>
+          <CardTitle variant="brutal" className="text-base">
+            On-chain
+          </CardTitle>
+          <CardDescription variant="brutal">Connect your wallet on Arc to trade or deposit.</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -204,43 +208,49 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
 
   if (!usdc) {
     return (
-      <Card className="border-amber-500/30">
+      <Card variant="brutal" className="border-amber-600/40">
         <CardHeader>
-          <CardTitle className="text-base">On-chain</CardTitle>
-          <CardDescription>Set NEXT_PUBLIC_USDC_ADDRESS in `.env.local` for USDC flows.</CardDescription>
+          <CardTitle variant="brutal" className="text-base">
+            On-chain
+          </CardTitle>
+          <CardDescription variant="brutal">
+            Set NEXT_PUBLIC_USDC_ADDRESS in `.env.local` for USDC flows.
+          </CardDescription>
         </CardHeader>
       </Card>
     );
   }
 
   return (
-    <Card>
+    <Card variant="brutal">
       <CardHeader>
-        <CardTitle className="text-base">On-chain</CardTitle>
-        <CardDescription>
-          Vault TVL (USDC): <span className="font-mono text-cyan-200">{vaultHuman}</span> · Your shares
-          (wei): <span className="font-mono text-cyan-200">{shareHuman}</span>
+        <CardTitle variant="brutal" className="text-base">
+          On-chain
+        </CardTitle>
+        <CardDescription variant="brutal">
+          Vault TVL (USDC): <span className="font-mono text-zinc-800">{vaultHuman}</span> · Your shares
+          (wei): <span className="font-mono text-zinc-800">{shareHuman}</span>
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {fm && shareCfgError && (
-          <p className="text-xs text-amber-200/80">
+          <p className="text-xs text-amber-900">
             Could not read this FundManager on Arc (wrong address, old bytecode without share config, or
             RPC issue). Deposit may still work if the vault matches.
           </p>
         )}
 
         {fm && !shareCfgError && shareConfigured === false && (
-          <p className="text-xs text-amber-200/80">
+          <p className="text-xs text-amber-900">
             FundManager exists but setShareToken was not run. Subscribe will revert until the manager owns
             the share token (redeploy + link).
           </p>
         )}
 
         {fm && (
-          <div className="space-y-2 rounded-xl border border-white/10 bg-black/25 p-4">
+          <div className="space-y-2 rounded-lg border-[2px] border-black/15 bg-[#f4f2ff] p-4">
             <Label htmlFor="sub">Subscribe (USDC → shares)</Label>
-            <p className="text-xs text-cyan-200/50">
+            <p className="text-xs text-zinc-500">
               1 USDC mints 1e18 share wei (1 whole NFT unit). Approve + `subscribe` in one flow.
             </p>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -263,7 +273,7 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
         )}
 
         {fm && (
-          <div className="space-y-2 rounded-xl border border-white/10 bg-black/25 p-4">
+          <div className="space-y-2 rounded-lg border-[2px] border-black/15 bg-[#f4f2ff] p-4">
             <Label htmlFor="dep">Deposit to vault only (no shares)</Label>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
               <Input
@@ -273,7 +283,7 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
                 onChange={(e) => setDepositUsdc(e.target.value)}
                 className="sm:max-w-[140px]"
               />
-              <Button type="button" variant="outline" disabled={Boolean(busy)} onClick={handleDepositVault}>
+              <Button type="button" variant="brutalOutline" disabled={Boolean(busy)} onClick={handleDepositVault}>
                 {busy === "deposit" ? "Working…" : "Deposit USDC"}
               </Button>
             </div>
@@ -281,9 +291,9 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
         )}
 
         {token && (
-          <div className="space-y-2 rounded-xl border border-white/10 bg-black/25 p-4">
+          <div className="space-y-2 rounded-lg border-[2px] border-black/15 bg-[#f4f2ff] p-4">
             <Label>Transfer shares (ERC-20)</Label>
-            <p className="text-xs text-cyan-200/50">Secondary sale: send 18-decimal share wei to a buyer.</p>
+            <p className="text-xs text-zinc-500">Secondary sale: send 18-decimal share wei to a buyer.</p>
             <Input placeholder="0x recipient" value={sendTo} onChange={(e) => setSendTo(e.target.value)} />
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
               <Input
@@ -293,14 +303,14 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
                 onChange={(e) => setSendShares(e.target.value)}
                 className="sm:max-w-[140px]"
               />
-              <Button type="button" variant="outline" disabled={Boolean(busy)} onClick={handleTransferShares}>
+              <Button type="button" variant="brutalOutline" disabled={Boolean(busy)} onClick={handleTransferShares}>
                 {busy === "transfer" ? "Working…" : "Transfer"}
               </Button>
             </div>
           </div>
         )}
 
-        {msg && <p className="text-xs text-cyan-200/70">{msg}</p>}
+        {msg && <p className="text-xs text-zinc-700">{msg}</p>}
       </CardContent>
     </Card>
   );
