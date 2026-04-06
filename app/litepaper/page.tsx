@@ -12,7 +12,7 @@ export default function LitepaperPage() {
             ← VibeFunds
           </Link>
           <a
-            href="https://github.com/growthmindsetgg/VIBE-CODING-2.0"
+            href="https://github.com/growthmindsetgg/vibefund"
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm font-bold uppercase tracking-wide text-white/90 hover:text-white"

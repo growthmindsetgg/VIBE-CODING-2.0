@@ -14,7 +14,7 @@ Tone target: institutional-clean, technical accuracy over hype.
 |--------|--------|
 | **Name** | VibeFunds |
 | **One-line pitch** | A gamified mutual-fund-style web app for creating “agent-themed” fund cards, browsing a marketplace, and (when contracts are deployed and linked) subscribing with USDC on **Arc testnet** for hybrid fungible + NFT-mirrored share units. |
-| **Repository** | `https://github.com/growthmindsetgg/VIBE-CODING-2.0` |
+| **Repository** | `https://github.com/growthmindsetgg/vibefund` |
 | **Primary chain (today)** | Arc Testnet, chain ID **5042002** |
 | **Stack** | Next.js 15 (App Router), TypeScript, Tailwind CSS v4, RainbowKit + wagmi + viem, Hardhat 3, Solidity 0.8.28, OpenZeppelin contracts |
 | **License posture** | MIT on contracts (verify `SPDX` in repo); treat as prototype unless stated otherwise |

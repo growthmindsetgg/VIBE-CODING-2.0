@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
-const GITHUB_URL = "https://github.com/growthmindsetgg/VIBE-CODING-2.0";
+const GITHUB_URL = "https://github.com/growthmindsetgg/vibefund";
 
 const ticker =
   "HYBRID SHARES + TRAIN AGENTS + SUBSCRIBE WITH USDC + ARC TESTNET + ERC-404-STYLE UNITS + OPEN MARKETPLACE";
