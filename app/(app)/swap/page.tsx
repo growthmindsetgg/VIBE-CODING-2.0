@@ -37,6 +37,8 @@ export default function SwapPage() {
 
   const [paySide, setPaySide] = useState<PaySide>("USDC");
   const [amountIn, setAmountIn] = useState("");
+  /** When false, transfer destination is the connected wallet. When true, use `recipient` field. */
+  const [customRecipient, setCustomRecipient] = useState(false);
   const [recipient, setRecipient] = useState("");
   const [slippageBps, setSlippageBps] = useState<number>(100);
   const [busy, setBusy] = useState<"approve" | "swap" | "transfer" | null>(null);
@@ -153,13 +155,24 @@ export default function SwapPage() {
   );
 
   const recipientValid =
-    recipient.trim() !== "" && isAddress(recipient.trim()) && recipient.trim() !== zeroAddress;
+    recipient.trim() !== "" && isAddress(recipient.trim()) && recipient.trim().toLowerCase() !== zeroAddress;
+
+  const transferDestination = useMemo(() => {
+    if (customRecipient) {
+      const r = recipient.trim();
+      if (!r || !isAddress(r) || r.toLowerCase() === zeroAddress) return undefined;
+      return r as `0x${string}`;
+    }
+    return address;
+  }, [customRecipient, recipient, address]);
 
   const canAmmSwap = Boolean(
     ammReady && vault && parsedIn > B0 && !needApproval && isConnected,
   );
 
-  const canTransfer = Boolean(isConnected && recipientValid && parsedIn > B0 && payToken);
+  const canTransfer = Boolean(
+    isConnected && transferDestination !== undefined && parsedIn > B0 && payToken,
+  );
 
   function flip() {
     setPaySide((s) => (s === "USDC" ? "EURC" : "USDC"));
@@ -369,9 +382,9 @@ export default function SwapPage() {
 
       {!ammReady && (
         <div className="mb-4 rounded-xl border border-violet-500/35 bg-violet-500/10 px-4 py-3 text-xs leading-relaxed text-violet-100/95">
-          <strong className="text-violet-200">No pool route.</strong> Swaps through StableSwapMicroVault appear when a
-          vault is configured and has liquidity. Until then, use <strong>direct transfer</strong> — enter a recipient and
-          send {paySide}. Estimated receive shows a <strong>1:1</strong> stable assumption for display only.
+          <strong className="text-violet-200">No pool route.</strong> Until a vault has liquidity, use{" "}
+          <strong>direct transfer</strong> of {paySide} — default sends to <strong>your connected wallet</strong>, or
+          toggle to send elsewhere. Estimated receive is a <strong>1:1</strong> display assumption only.
         </div>
       )}
 
@@ -504,19 +517,61 @@ export default function SwapPage() {
           </div>
 
           {!ammReady && (
-            <div className="mt-4">
-              <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-cyan-500/70">
-                Recipient address
-              </label>
-              <input
-                value={recipient}
-                onChange={(e) => setRecipient(e.target.value)}
-                placeholder="0x…"
-                spellCheck={false}
-                className="mt-2 w-full rounded-xl border border-white/10 bg-black/60 px-3 py-3 font-mono text-sm text-cyan-50 outline-none ring-cyan-500/30 placeholder:text-white/25 focus:border-cyan-500/50 focus:ring-2"
-              />
-              {recipient.trim() !== "" && !recipientValid && (
-                <p className="mt-1 text-xs text-red-400/90">Enter a valid 0x address</p>
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-cyan-500/25 bg-black/45 px-3 py-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-cyan-500/70">
+                    Destination
+                  </p>
+                  <p className="mt-1 truncate font-mono text-xs text-cyan-100/90">
+                    {customRecipient
+                      ? "Another wallet"
+                      : address
+                        ? `My wallet · ${shortAddr(address)}`
+                        : "Connect wallet"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={customRecipient}
+                  aria-label="Send to another address"
+                  onClick={() => {
+                    setCustomRecipient((v) => !v);
+                    setRecipient("");
+                  }}
+                  className={`relative h-8 w-[52px] shrink-0 rounded-full border transition-colors ${
+                    customRecipient
+                      ? "border-fuchsia-400/60 bg-fuchsia-500/20 shadow-[0_0_16px_rgba(255,43,214,0.25)]"
+                      : "border-cyan-500/40 bg-cyan-500/10 shadow-[0_0_12px_rgba(0,240,255,0.15)]"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 left-1 size-6 rounded-full bg-gradient-to-br from-white to-zinc-300 shadow-md transition-transform duration-200 ease-out ${
+                      customRecipient ? "translate-x-[22px]" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+              <p className="font-mono text-[9px] leading-relaxed text-white/35">
+                Off = send to this session&apos;s connected address. On = enter a different recipient below.
+              </p>
+              {customRecipient && (
+                <div>
+                  <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-cyan-500/70">
+                    Recipient address
+                  </label>
+                  <input
+                    value={recipient}
+                    onChange={(e) => setRecipient(e.target.value)}
+                    placeholder="0x…"
+                    spellCheck={false}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-black/60 px-3 py-3 font-mono text-sm text-cyan-50 outline-none ring-cyan-500/30 placeholder:text-white/25 focus:border-cyan-500/50 focus:ring-2"
+                  />
+                  {recipient.trim() !== "" && !recipientValid && (
+                    <p className="mt-1 text-xs text-red-400/90">Enter a valid 0x address</p>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -562,9 +617,13 @@ export default function SwapPage() {
                   ? "Sending…"
                   : parsedIn <= B0
                     ? "Enter amount"
-                    : !recipientValid
+                    : customRecipient && !recipientValid
                       ? "Enter recipient"
-                      : `Send ${paySide}`}
+                      : !address && !customRecipient
+                        ? "Connect wallet"
+                        : customRecipient
+                          ? `Send ${paySide}`
+                          : `Send ${paySide} to my wallet`}
               </button>
             )}
           </div>
