@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { isAddress } from "viem";
+import { isAddress, zeroAddress } from "viem";
 import { eurcAddress, stableVaultAddress, usdcAddress } from "@/lib/contracts/addresses";
 
 const STORAGE_KEY = "vibefunds_stable_addresses_v1";
@@ -55,7 +55,11 @@ export function useStableVaultAddresses() {
   const envUsdc = usdcAddress();
   const envEurc = eurcAddress();
 
-  const vault = useMemo(() => pick(envVault, stored.vault), [envVault, stored.vault]);
+  const vault = useMemo(() => {
+    const v = pick(envVault, stored.vault);
+    if (!v || v.toLowerCase() === zeroAddress.toLowerCase()) return undefined;
+    return v;
+  }, [envVault, stored.vault]);
   const usdc = useMemo(() => pick(envUsdc, stored.usdc), [envUsdc, stored.usdc]);
   const eurc = useMemo(() => pick(envEurc, stored.eurc), [envEurc, stored.eurc]);
 

@@ -196,6 +196,10 @@ export default function SwapPage() {
 
   async function onApprove() {
     if (!vault || !payToken || !address) return;
+    if (vault.toLowerCase() === zeroAddress.toLowerCase()) {
+      toast.error("Set a valid vault address before approving.");
+      return;
+    }
     setBusy("approve");
     setLastTxHash(null);
     try {

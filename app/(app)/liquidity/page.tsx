@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { erc20Abi, formatUnits, maxUint256, parseUnits } from "viem";
+import { erc20Abi, formatUnits, maxUint256, parseUnits, zeroAddress } from "viem";
 import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { MissingStableVaultConfig } from "@/components/stable-vault/missing-config";
@@ -107,6 +107,9 @@ export default function LiquidityPage() {
 
   async function ensureApprove(token: `0x${string}`, spender: `0x${string}`) {
     if (!address) throw new Error("Connect wallet");
+    if (!spender || spender.toLowerCase() === zeroAddress.toLowerCase()) {
+      throw new Error("Set a valid vault address (Pool setup) — cannot approve for the zero address.");
+    }
     const hash = await writeContractAsync({
       chainId: STABLE_VAULT_CHAIN_ID,
       address: token,
@@ -362,7 +365,13 @@ export default function LiquidityPage() {
             <Button type="button" variant="brutalOutline" disabled={!isConnected || busy !== null} onClick={onMicroOff}>
               Opt out
             </Button>
-            <Button type="button" variant="brutalOutline" disabled={!isConnected || busy !== null} onClick={onApproveMicroPulls}>
+            <Button
+              type="button"
+              variant="brutalOutline"
+              disabled={!isConnected || busy !== null || !vault}
+              onClick={onApproveMicroPulls}
+              title={!vault ? "Deploy or paste a vault address in Pool setup first" : undefined}
+            >
               Approve tokens
             </Button>
           </div>

@@ -1,4 +1,4 @@
-import { isAddress } from "viem";
+import { isAddress, zeroAddress } from "viem";
 
 /** Arc testnet canonical USDC (gas token contract). */
 export const ARC_TESTNET_USDC = "0x3600000000000000000000000000000000000000" as const;
@@ -28,7 +28,9 @@ export function eurcAddress(): `0x${string}` {
 export function stableVaultAddress(): `0x${string}` | undefined {
   const raw = process.env.NEXT_PUBLIC_STABLE_VAULT_ADDRESS;
   if (!raw || !isAddress(raw.trim())) return undefined;
-  return raw.trim() as `0x${string}`;
+  const t = raw.trim() as `0x${string}`;
+  if (t.toLowerCase() === zeroAddress.toLowerCase()) return undefined;
+  return t;
 }
 
 export function protocolTreasury(): `0x${string}` | undefined {
