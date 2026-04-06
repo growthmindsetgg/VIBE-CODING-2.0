@@ -1,4 +1,8 @@
+import { config as loadEnv } from "dotenv";
 import hardhatViem from "@nomicfoundation/hardhat-viem";
+
+loadEnv();
+loadEnv({ path: ".env.local", override: true });
 import { configVariable, defineConfig } from "hardhat/config";
 
 /**
