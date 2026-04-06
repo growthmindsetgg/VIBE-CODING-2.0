@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { ArrowDown, Check, Copy, ExternalLink, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { erc20Abi, formatUnits, isAddress, maxUint256, parseUnits, zeroAddress } from "viem";
@@ -270,8 +271,8 @@ export default function SwapPage() {
   }
 
   async function onTransfer() {
-    if (!payToken || !recipientValid) return;
-    const to = recipient.trim() as `0x${string}`;
+    if (!payToken || !transferDestination) return;
+    const to = transferDestination;
     setBusy("transfer");
     setLastTxHash(null);
     try {
@@ -284,7 +285,7 @@ export default function SwapPage() {
       });
       await waitForTransactionReceipt(config, { hash });
       setLastTxHash(hash);
-      toast.success(`${paySide} sent`, {
+      toast.success(`${paySide} transferred (same token — not a cross-asset swap)`, {
         description: (
           <a
             href={`${explorerBase}/tx/${hash}`}
@@ -375,16 +376,35 @@ export default function SwapPage() {
         </div>
       ) : (
         <div className="mb-6 rounded-2xl border border-zinc-700/50 bg-zinc-900/40 px-4 py-6 text-center">
-          <p className="font-mono text-sm text-zinc-400">Connect your wallet to swap or transfer</p>
+          <p className="font-mono text-sm text-zinc-400">Connect your wallet to swap (when pool is live)</p>
           <p className="mt-1 text-xs text-zinc-600">Use the connect control in the header</p>
         </div>
       )}
 
       {!ammReady && (
         <div className="mb-4 rounded-xl border border-violet-500/35 bg-violet-500/10 px-4 py-3 text-xs leading-relaxed text-violet-100/95">
-          <strong className="text-violet-200">No pool route.</strong> Until a vault has liquidity, use{" "}
-          <strong>direct transfer</strong> of {paySide} — default sends to <strong>your connected wallet</strong>, or
-          toggle to send elsewhere. Estimated receive is a <strong>1:1</strong> display assumption only.
+          <strong className="text-violet-200">USDC → EURC is not a wallet transfer.</strong> Only the StableSwapMicroVault
+          can atomically trade one stable for the other (
+          <span className="font-mono text-[10px]">swapUsdcForEurc</span> /{" "}
+          <span className="font-mono text-[10px]">swapEurcForUsdc</span>
+          ).{" "}
+          {!vault ? (
+            <>
+              Set <span className="font-mono">NEXT_PUBLIC_STABLE_VAULT_ADDRESS</span> or paste the vault on the{" "}
+              <Link href="/liquidity" className="font-bold text-violet-200 underline underline-offset-2">
+                Pool
+              </Link>{" "}
+              page, then add liquidity.
+            </>
+          ) : (
+            <>
+              Vault is set but the pool has no tradable reserves yet —{" "}
+              <Link href="/liquidity" className="font-bold text-violet-200 underline underline-offset-2">
+                add USDC + EURC liquidity
+              </Link>{" "}
+              first, then swap here.
+            </>
+          )}
         </div>
       )}
 
@@ -485,12 +505,18 @@ export default function SwapPage() {
             <span className="text-xs font-medium text-emerald-100/55">You receive (est.)</span>
             <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
               <p className="font-mono text-3xl font-bold tabular-nums text-white">
-                {parsedIn > B0 ? formatUnits(estOut, STABLE_TOKEN_DECIMALS) : "—"}
+                {ammReady && parsedIn > B0 && estOut > B0 ? formatUnits(estOut, STABLE_TOKEN_DECIMALS) : "—"}
               </p>
               <span className="rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-wide text-emerald-200">
                 {receiveSide}
               </span>
             </div>
+            {!ammReady && (
+              <p className="mt-2 font-mono text-[10px] leading-relaxed text-amber-200/70">
+                Output stays empty until the vault pool has both USDC and EURC — then swaps mint the other token to your
+                wallet.
+              </p>
+            )}
             <div className="mt-3 space-y-1 font-mono text-[10px] leading-relaxed text-white/40">
               <p>
                 Price impact:{" "}
@@ -499,7 +525,7 @@ export default function SwapPage() {
                     ? `${(priceImpactBps / 100).toFixed(2)}%`
                     : ammReady
                       ? "—"
-                      : "0% (no pool)"}
+                      : "— (no pool)"}
                 </span>
               </p>
               {ammReady && quoteOut > B0 && (
@@ -515,66 +541,6 @@ export default function SwapPage() {
               )}
             </div>
           </div>
-
-          {!ammReady && (
-            <div className="mt-4 space-y-3">
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-cyan-500/25 bg-black/45 px-3 py-3">
-                <div className="min-w-0">
-                  <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-cyan-500/70">
-                    Destination
-                  </p>
-                  <p className="mt-1 truncate font-mono text-xs text-cyan-100/90">
-                    {customRecipient
-                      ? "Another wallet"
-                      : address
-                        ? `My wallet · ${shortAddr(address)}`
-                        : "Connect wallet"}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={customRecipient}
-                  aria-label="Send to another address"
-                  onClick={() => {
-                    setCustomRecipient((v) => !v);
-                    setRecipient("");
-                  }}
-                  className={`relative h-8 w-[52px] shrink-0 rounded-full border transition-colors ${
-                    customRecipient
-                      ? "border-fuchsia-400/60 bg-fuchsia-500/20 shadow-[0_0_16px_rgba(255,43,214,0.25)]"
-                      : "border-cyan-500/40 bg-cyan-500/10 shadow-[0_0_12px_rgba(0,240,255,0.15)]"
-                  }`}
-                >
-                  <span
-                    className={`absolute top-1 left-1 size-6 rounded-full bg-gradient-to-br from-white to-zinc-300 shadow-md transition-transform duration-200 ease-out ${
-                      customRecipient ? "translate-x-[22px]" : "translate-x-0"
-                    }`}
-                  />
-                </button>
-              </div>
-              <p className="font-mono text-[9px] leading-relaxed text-white/35">
-                Off = send to this session&apos;s connected address. On = enter a different recipient below.
-              </p>
-              {customRecipient && (
-                <div>
-                  <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-cyan-500/70">
-                    Recipient address
-                  </label>
-                  <input
-                    value={recipient}
-                    onChange={(e) => setRecipient(e.target.value)}
-                    placeholder="0x…"
-                    spellCheck={false}
-                    className="mt-2 w-full rounded-xl border border-white/10 bg-black/60 px-3 py-3 font-mono text-sm text-cyan-50 outline-none ring-cyan-500/30 placeholder:text-white/25 focus:border-cyan-500/50 focus:ring-2"
-                  />
-                  {recipient.trim() !== "" && !recipientValid && (
-                    <p className="mt-1 text-xs text-red-400/90">Enter a valid 0x address</p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
 
           <div className="mt-5 space-y-2">
             {!isConnected ? (
@@ -603,28 +569,97 @@ export default function SwapPage() {
                       ? "Approve token first"
                       : parsedIn <= B0
                         ? "Enter amount"
-                        : "Swap"}
+                        : `Swap ${paySide} for ${receiveSide}`}
                 </button>
               </>
             ) : (
-              <button
-                type="button"
-                disabled={!canTransfer || busy !== null}
-                onClick={onTransfer}
-                className="w-full rounded-xl border border-cyan-400/60 bg-gradient-to-r from-cyan-500/35 via-fuchsia-500/25 to-emerald-500/30 py-4 font-mono text-sm font-bold uppercase tracking-wide text-white shadow-[0_0_40px_rgba(0,240,255,0.22)] disabled:cursor-not-allowed disabled:opacity-35"
-              >
-                {busy === "transfer"
-                  ? "Sending…"
-                  : parsedIn <= B0
-                    ? "Enter amount"
-                    : customRecipient && !recipientValid
-                      ? "Enter recipient"
-                      : !address && !customRecipient
-                        ? "Connect wallet"
-                        : customRecipient
-                          ? `Send ${paySide}`
-                          : `Send ${paySide} to my wallet`}
-              </button>
+              <div className="space-y-3">
+                <Link
+                  href="/liquidity"
+                  className="flex w-full items-center justify-center rounded-xl border border-emerald-400/50 bg-emerald-500/15 py-4 font-mono text-sm font-bold uppercase tracking-wide text-emerald-100 shadow-[0_0_28px_rgba(52,211,153,0.2)] transition-colors hover:bg-emerald-500/25"
+                >
+                  {vault ? "Add liquidity to enable swap" : "Open Pool — set vault & liquidity"}
+                </Link>
+                <details className="group rounded-xl border border-white/10 bg-black/50">
+                  <summary className="cursor-pointer list-none px-4 py-3 font-mono text-[10px] font-bold uppercase tracking-widest text-zinc-500 transition-colors marker:content-none group-open:text-cyan-400/80 [&::-webkit-details-marker]:hidden">
+                    <span className="select-none">Same-token send only · not USDC→EURC</span>
+                  </summary>
+                  <div className="space-y-3 border-t border-white/5 px-4 pb-4 pt-3">
+                    <p className="font-mono text-[10px] leading-relaxed text-zinc-500">
+                      ERC-20 <span className="text-zinc-400">transfer</span> moves {paySide} only. It never mints the
+                      other stable.
+                    </p>
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-cyan-500/20 bg-black/45 px-3 py-3">
+                      <div className="min-w-0">
+                        <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-cyan-500/70">
+                          Destination
+                        </p>
+                        <p className="mt-1 truncate font-mono text-xs text-cyan-100/90">
+                          {customRecipient
+                            ? "Another wallet"
+                            : address
+                              ? `My wallet · ${shortAddr(address)}`
+                              : "Connect wallet"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={customRecipient}
+                        aria-label="Send to another address"
+                        onClick={() => {
+                          setCustomRecipient((v) => !v);
+                          setRecipient("");
+                        }}
+                        className={`relative h-8 w-[52px] shrink-0 rounded-full border transition-colors ${
+                          customRecipient
+                            ? "border-fuchsia-400/60 bg-fuchsia-500/20 shadow-[0_0_16px_rgba(255,43,214,0.25)]"
+                            : "border-cyan-500/40 bg-cyan-500/10 shadow-[0_0_12px_rgba(0,240,255,0.15)]"
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-1 left-1 size-6 rounded-full bg-gradient-to-br from-white to-zinc-300 shadow-md transition-transform duration-200 ease-out ${
+                            customRecipient ? "translate-x-[22px]" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    {customRecipient && (
+                      <div>
+                        <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-cyan-500/70">
+                          Recipient address
+                        </label>
+                        <input
+                          value={recipient}
+                          onChange={(e) => setRecipient(e.target.value)}
+                          placeholder="0x…"
+                          spellCheck={false}
+                          className="mt-2 w-full rounded-xl border border-white/10 bg-black/60 px-3 py-3 font-mono text-sm text-cyan-50 outline-none ring-cyan-500/30 placeholder:text-white/25 focus:border-cyan-500/50 focus:ring-2"
+                        />
+                        {recipient.trim() !== "" && !recipientValid && (
+                          <p className="mt-1 text-xs text-red-400/90">Enter a valid 0x address</p>
+                        )}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      disabled={!canTransfer || busy !== null}
+                      onClick={onTransfer}
+                      className="w-full rounded-xl border border-zinc-600 bg-zinc-800/80 py-3 font-mono text-xs font-bold uppercase tracking-wide text-zinc-200 hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-35"
+                    >
+                      {busy === "transfer"
+                        ? "Sending…"
+                        : parsedIn <= B0
+                          ? "Enter amount"
+                          : customRecipient && !recipientValid
+                            ? "Enter recipient"
+                            : !address && !customRecipient
+                              ? "Connect wallet"
+                              : `Transfer ${paySide} only`}
+                    </button>
+                  </div>
+                </details>
+              </div>
             )}
           </div>
         </div>
