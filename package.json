@@ -9,8 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "compile": "hardhat compile",
-    "deploy:arc": "hardhat run scripts/deploy.ts --network arcTestnet",
-    "deploy:stable-vault": "hardhat run scripts/deploy-stable-vault.ts --network arcTestnet",
+    "deploy:arc": "hardhat run scripts/deploy.ts --network arc-testnet",
+    "deploy:stable-vault": "hardhat run scripts/deploy-stable-vault.ts --network arc-testnet",
     "deploy:vercel": "vercel --prod"
   },
   "dependencies": {
