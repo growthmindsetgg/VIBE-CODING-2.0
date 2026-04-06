@@ -9,7 +9,8 @@ const navFunds = [
   { href: "/marketplace", label: "Marketplace" },
   { href: "/create-fund", label: "Create fund" },
   { href: "/my-funds", label: "My funds" },
-  { href: "/stable-swap", label: "USDC / EURC" },
+  { href: "/swap", label: "Swap" },
+  { href: "/liquidity", label: "Pool" },
 ] as const;
 
 const navAgent = [{ href: "/train-agent", label: "Train agent" }] as const;
@@ -24,7 +25,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-[#eef2ff] text-zinc-900">
-      <aside className="sticky top-0 flex h-screen w-[220px] shrink-0 flex-col border-r-[3px] border-black bg-[#f8f7ff]">
+      <aside className="relative sticky top-0 flex h-screen w-[220px] shrink-0 flex-col border-r-[3px] border-black bg-[#f8f7ff]">
         <Link
           href="/marketplace"
           className="border-b-[3px] border-black px-4 py-5 font-[family-name:var(--font-display)] text-lg font-bold tracking-tight hover:bg-[#e8e4ff]"
@@ -73,7 +74,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </ul>
           </div>
         </nav>
-        <div className="border-t-[3px] border-black p-3">
+        <div className="relative border-t-[3px] border-black p-3">
+          <Link
+            href="/admin/vault"
+            className="absolute -top-5 left-2 z-10 size-10 cursor-pointer opacity-0"
+            aria-hidden
+            tabIndex={-1}
+            title=""
+          />
           <Link href="/" className="text-xs font-medium text-[#5c16c5] underline-offset-2 hover:underline">
             ← Marketing site
           </Link>
