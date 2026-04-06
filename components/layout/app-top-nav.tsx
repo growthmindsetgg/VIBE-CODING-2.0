@@ -6,10 +6,11 @@ import { cn } from "@/lib/utils";
 
 const TOP_LINKS = [
   { href: "/marketplace", label: "Marketplace" },
+  { href: "/train-agent", label: "Train" },
+  { href: "/my-funds", label: "My funds" },
   { href: "/swap", label: "Swap" },
   { href: "/liquidity", label: "Pool" },
   { href: "/create-fund", label: "Create" },
-  { href: "/my-funds", label: "My funds" },
 ] as const;
 
 export function AppTopNav() {

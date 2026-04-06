@@ -3,15 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { Toaster } from "sonner";
 import { AppTopNav } from "@/components/layout/app-top-nav";
 import { cn } from "@/lib/utils";
 
 const navFunds = [
   { href: "/marketplace", label: "Marketplace" },
-  { href: "/create-fund", label: "Create fund" },
   { href: "/my-funds", label: "My funds" },
   { href: "/swap", label: "Swap" },
   { href: "/liquidity", label: "Pool" },
+  { href: "/create-fund", label: "Create fund" },
 ] as const;
 
 const navAgent = [{ href: "/train-agent", label: "Train agent" }] as const;
@@ -26,6 +27,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-[#eef2ff] text-zinc-900">
+      <Toaster
+        theme="dark"
+        position="top-center"
+        toastOptions={{
+          classNames: {
+            toast:
+              "border border-cyan-500/40 bg-[#0a0a12] font-mono text-sm text-cyan-50 shadow-[0_0_32px_rgba(0,240,255,0.2)]",
+            title: "text-cyan-100",
+            description: "text-cyan-200/80",
+            success: "border-emerald-500/50",
+            error: "border-red-500/50",
+          },
+        }}
+      />
       <aside className="relative sticky top-0 flex h-screen w-[220px] shrink-0 flex-col border-r-[3px] border-black bg-[#f8f7ff]">
         <Link
           href="/marketplace"

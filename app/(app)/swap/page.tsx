@@ -1,50 +1,47 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowDown, ExternalLink, RefreshCw } from "lucide-react";
-import { erc20Abi, formatUnits, maxUint256, parseUnits } from "viem";
+import { ArrowDown, Check, Copy, ExternalLink, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+import { erc20Abi, formatUnits, isAddress, maxUint256, parseUnits, zeroAddress } from "viem";
 import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
-import { MissingStableVaultConfig } from "@/components/stable-vault/missing-config";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
 import { arcTestnet } from "@/lib/chains/arc";
+import { ARC_TESTNET_EURC, ARC_TESTNET_USDC } from "@/lib/contracts/addresses";
 import { B0, STABLE_TOKEN_DECIMALS, STABLE_VAULT_CHAIN_ID } from "@/lib/stable-vault/constants";
 import { quoteEurcToUsdc, quoteUsdcToEurc } from "@/lib/stable-swap/quote";
 
 type PaySide = "USDC" | "EURC";
 
-const POLL_MS = 12_000;
+const POLL_MS = 4000;
+const B10K = BigInt(10_000);
 const SLIPPAGE_OPTIONS = [
   { label: "0.5%", bps: 50 },
   { label: "1%", bps: 100 },
   { label: "3%", bps: 300 },
 ] as const;
 
-const B10K = BigInt(10_000);
+function shortAddr(a: `0x${string}`) {
+  return `${a.slice(0, 6)}…${a.slice(-4)}`;
+}
 
 export default function SwapPage() {
   const config = useConfig();
   const { address, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
-  const {
-    vault,
-    usdc: usdcAddr,
-    eurc: eurcAddr,
-    ready: poolReady,
-    tokensReady,
-    saveBrowserOverrides,
-    clearBrowserOverrides,
-    storedSnapshot,
-    reloadStored,
-  } = useStableVaultAddresses();
+  const { vault, usdc: hookUsdc, eurc: hookEurc, reloadStored } = useStableVaultAddresses();
+  const usdcAddr = hookUsdc ?? ARC_TESTNET_USDC;
+  const eurcAddr = hookEurc ?? ARC_TESTNET_EURC;
 
   const [paySide, setPaySide] = useState<PaySide>("USDC");
   const [amountIn, setAmountIn] = useState("");
+  const [recipient, setRecipient] = useState("");
   const [slippageBps, setSlippageBps] = useState<number>(100);
-  const [busy, setBusy] = useState<"approve" | "swap" | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"approve" | "swap" | "transfer" | null>(null);
   const [lastTxHash, setLastTxHash] = useState<`0x${string}` | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const receiveSide: PaySide = paySide === "USDC" ? "EURC" : "USDC";
   const explorerBase = arcTestnet.blockExplorers.default.url;
@@ -115,14 +112,30 @@ export default function SwapPage() {
     }
   }, [amountIn]);
 
-  const canQuote = Boolean(vault && rU > B0 && rE > B0 && tLp > B0 && parsedIn > B0);
+  const ammReady = Boolean(vault && rU > B0 && rE > B0 && tLp > B0);
+
+  const canQuoteAmm = Boolean(ammReady && parsedIn > B0);
 
   const quoteOut = useMemo(() => {
-    if (!canQuote) return B0;
+    if (!canQuoteAmm) return B0;
     return paySide === "USDC"
       ? quoteUsdcToEurc(rU, rE, parsedIn)
       : quoteEurcToUsdc(rU, rE, parsedIn);
-  }, [canQuote, rU, rE, parsedIn, paySide]);
+  }, [canQuoteAmm, rU, rE, parsedIn, paySide]);
+
+  /** Spot output ignoring pool fee — for price impact vs executed quote. */
+  const idealOut = useMemo(() => {
+    if (!vault || rU <= B0 || rE <= B0 || parsedIn <= B0) return B0;
+    return paySide === "USDC" ? (parsedIn * rE) / rU : (parsedIn * rU) / rE;
+  }, [vault, rU, rE, parsedIn, paySide]);
+
+  const priceImpactBps = useMemo(() => {
+    if (!ammReady || idealOut <= B0 || quoteOut <= B0) return 0;
+    const bps = Number(((idealOut - quoteOut) * B10K) / idealOut);
+    return Math.min(99_99, Math.max(0, bps));
+  }, [ammReady, idealOut, quoteOut]);
+
+  const estOut = ammReady ? quoteOut : parsedIn;
 
   const minOut = useMemo(() => {
     if (quoteOut <= B0) return B0;
@@ -131,21 +144,26 @@ export default function SwapPage() {
   }, [quoteOut, slippageBps]);
 
   const needApproval = Boolean(
-    vault &&
+    ammReady &&
+      vault &&
       payToken &&
       address &&
       parsedIn > B0 &&
       (allowance === undefined || (allowance as bigint) < parsedIn),
   );
 
-  const canSwapOnChain = Boolean(
-    poolReady && vault && parsedIn > B0 && tLp > B0 && rU > B0 && rE > B0 && !needApproval && isConnected,
+  const recipientValid =
+    recipient.trim() !== "" && isAddress(recipient.trim()) && recipient.trim() !== zeroAddress;
+
+  const canAmmSwap = Boolean(
+    ammReady && vault && parsedIn > B0 && !needApproval && isConnected,
   );
+
+  const canTransfer = Boolean(isConnected && recipientValid && parsedIn > B0 && payToken);
 
   function flip() {
     setPaySide((s) => (s === "USDC" ? "EURC" : "USDC"));
     setAmountIn("");
-    setMsg(null);
     setLastTxHash(null);
   }
 
@@ -168,10 +186,17 @@ export default function SwapPage() {
     reloadStored();
   }
 
+  async function copyAddress() {
+    if (!address) return;
+    await navigator.clipboard.writeText(address);
+    setCopied(true);
+    toast.success("Address copied");
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   async function onApprove() {
     if (!vault || !payToken || !address) return;
     setBusy("approve");
-    setMsg(null);
     setLastTxHash(null);
     try {
       const hash = await writeContractAsync({
@@ -183,10 +208,10 @@ export default function SwapPage() {
       });
       await waitForTransactionReceipt(config, { hash });
       setLastTxHash(hash);
-      setMsg("Approval confirmed.");
+      toast.success("Token approved", { description: shortAddr(hash) });
       await refetchAllowance();
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Approve failed");
+      toast.error(e instanceof Error ? e.message : "Approve failed");
     } finally {
       setBusy(null);
     }
@@ -195,12 +220,8 @@ export default function SwapPage() {
   async function onSwap() {
     if (!vault || !payToken) return;
     setBusy("swap");
-    setMsg(null);
     setLastTxHash(null);
     try {
-      if (tLp === B0 || rU === B0 || rE === B0) {
-        throw new Error("Pool has no liquidity — add liquidity on the Pool page first.");
-      }
       const hash = await writeContractAsync({
         chainId: STABLE_VAULT_CHAIN_ID,
         address: vault,
@@ -210,132 +231,210 @@ export default function SwapPage() {
       });
       await waitForTransactionReceipt(config, { hash });
       setLastTxHash(hash);
-      setMsg("Swap confirmed.");
+      toast.success("Swap confirmed", {
+        description: (
+          <a
+            href={`${explorerBase}/tx/${hash}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-emerald-300 underline"
+          >
+            View on ArcScan <ExternalLink className="size-3" />
+          </a>
+        ),
+      });
+      setAmountIn("");
       await refreshAll();
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Swap failed");
+      toast.error(e instanceof Error ? e.message : "Swap failed");
     } finally {
       setBusy(null);
     }
   }
 
-  if (!tokensReady) {
-    return (
-      <div className="mx-auto max-w-lg space-y-6">
-        <header>
-          <p className="font-mono text-xs font-bold uppercase tracking-widest text-cyan-400/80">Vibefunds / Swap</p>
-          <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl font-bold uppercase text-black">Swap</h1>
-          <p className="mt-2 text-sm text-zinc-600">Save USDC and EURC addresses (browser or env) to use the swap.</p>
-        </header>
-        <MissingStableVaultConfig
-          saveBrowserOverrides={saveBrowserOverrides}
-          clearBrowserOverrides={clearBrowserOverrides}
-          storedSnapshot={storedSnapshot}
-        />
-      </div>
-    );
+  async function onTransfer() {
+    if (!payToken || !recipientValid) return;
+    const to = recipient.trim() as `0x${string}`;
+    setBusy("transfer");
+    setLastTxHash(null);
+    try {
+      const hash = await writeContractAsync({
+        chainId: STABLE_VAULT_CHAIN_ID,
+        address: payToken,
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [to, parsedIn],
+      });
+      await waitForTransactionReceipt(config, { hash });
+      setLastTxHash(hash);
+      toast.success(`${paySide} sent`, {
+        description: (
+          <a
+            href={`${explorerBase}/tx/${hash}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-emerald-300 underline"
+          >
+            View on ArcScan <ExternalLink className="size-3" />
+          </a>
+        ),
+      });
+      setAmountIn("");
+      await refreshAll();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Transfer failed");
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
-    <div className="mx-auto max-w-md space-y-6 pb-12">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+    <div className="relative mx-auto max-w-md pb-16">
+      <div
+        className="pointer-events-none absolute inset-0 -z-10 opacity-40 blur-3xl"
+        aria-hidden
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,240,255,0.25), transparent 50%), radial-gradient(ellipse 60% 40% at 100% 50%, rgba(255,43,214,0.12), transparent 45%)",
+        }}
+      />
+
+      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="font-mono text-xs font-bold uppercase tracking-widest text-cyan-500">Vibefunds / Swap</p>
-          <h1 className="mt-1 bg-gradient-to-r from-fuchsia-400 via-cyan-300 to-emerald-300 bg-clip-text font-[family-name:var(--font-display)] text-3xl font-bold uppercase text-transparent">
+          <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-400/90">
+            VibeFunds · Swap
+          </p>
+          <h1 className="mt-2 bg-gradient-to-r from-fuchsia-400 via-cyan-300 to-emerald-300 bg-clip-text font-[family-name:var(--font-display)] text-4xl font-bold uppercase tracking-tight text-transparent">
             Swap
           </h1>
-          <p className="mt-1 text-sm text-zinc-500">Arc testnet · USDC ↔ EURC</p>
+          <p className="mt-2 text-sm text-zinc-500">
+            Arc testnet ·{" "}
+            <span className="font-mono text-cyan-600/90">{ARC_TESTNET_USDC.slice(0, 10)}…</span> ·{" "}
+            <span className="font-mono text-fuchsia-600/90">{ARC_TESTNET_EURC.slice(0, 10)}…</span>
+          </p>
         </div>
         <button
           type="button"
           onClick={() => refreshAll()}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-[#050510] px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-cyan-300 shadow-[0_0_16px_rgba(0,240,255,0.15)] hover:border-cyan-400/70"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-[#050510] px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-wider text-cyan-300 shadow-[0_0_20px_rgba(0,240,255,0.15)] transition-colors hover:border-cyan-400/70 hover:text-cyan-100"
         >
           <RefreshCw className="size-3.5" aria-hidden />
           Refresh
         </button>
       </header>
 
-      {isConnected && address && (
-        <div className="flex flex-wrap gap-3 rounded-xl border border-cyan-500/30 bg-[#050510] px-4 py-3 shadow-[0_0_28px_rgba(0,240,255,0.08)]">
-          <div className="min-w-[120px]">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-cyan-500/70">USDC</p>
-            <p className="font-mono text-sm font-semibold text-cyan-100">
-              {usdcBal !== undefined ? formatUnits(usdcBal as bigint, STABLE_TOKEN_DECIMALS) : "—"}
-            </p>
+      {isConnected && address ? (
+        <div className="mb-6 rounded-2xl border border-cyan-500/35 bg-[#050510] p-4 shadow-[0_0_40px_rgba(0,240,255,0.1)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-mono text-[9px] font-bold uppercase tracking-widest text-cyan-500/60">
+                Connected
+              </p>
+              <p className="mt-1 font-mono text-sm font-semibold text-cyan-100">{shortAddr(address)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={copyAddress}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 font-mono text-[10px] font-bold uppercase text-cyan-200/80 hover:border-cyan-500/40 hover:text-cyan-100"
+            >
+              {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
           </div>
-          <div className="min-w-[120px]">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-fuchsia-400/70">EURC</p>
-            <p className="font-mono text-sm font-semibold text-fuchsia-100">
-              {eurcBal !== undefined ? formatUnits(eurcBal as bigint, STABLE_TOKEN_DECIMALS) : "—"}
-            </p>
+          <div className="mt-4 grid grid-cols-2 gap-3 border-t border-white/5 pt-4">
+            <div>
+              <p className="font-mono text-[9px] uppercase tracking-widest text-cyan-500/70">USDC</p>
+              <p className="mt-0.5 font-mono text-lg font-bold tabular-nums text-cyan-100">
+                {usdcBal !== undefined ? formatUnits(usdcBal as bigint, STABLE_TOKEN_DECIMALS) : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="font-mono text-[9px] uppercase tracking-widest text-fuchsia-400/70">EURC</p>
+              <p className="mt-0.5 font-mono text-lg font-bold tabular-nums text-fuchsia-100">
+                {eurcBal !== undefined ? formatUnits(eurcBal as bigint, STABLE_TOKEN_DECIMALS) : "—"}
+              </p>
+            </div>
           </div>
+        </div>
+      ) : (
+        <div className="mb-6 rounded-2xl border border-zinc-700/50 bg-zinc-900/40 px-4 py-6 text-center">
+          <p className="font-mono text-sm text-zinc-400">Connect your wallet to swap or transfer</p>
+          <p className="mt-1 text-xs text-zinc-600">Use the connect control in the header</p>
         </div>
       )}
 
-      {!vault && (
-        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-          <strong className="text-amber-200">Vault not set.</strong> Save a pool contract under Pool setup, or set{" "}
-          <span className="font-mono">NEXT_PUBLIC_STABLE_VAULT_ADDRESS</span>. You can still view balances above.
+      {!ammReady && (
+        <div className="mb-4 rounded-xl border border-violet-500/35 bg-violet-500/10 px-4 py-3 text-xs leading-relaxed text-violet-100/95">
+          <strong className="text-violet-200">No pool route.</strong> Swaps through StableSwapMicroVault appear when a
+          vault is configured and has liquidity. Until then, use <strong>direct transfer</strong> — enter a recipient and
+          send {paySide}. Estimated receive shows a <strong>1:1</strong> stable assumption for display only.
+        </div>
+      )}
+
+      {ammReady && (
+        <p className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 font-mono text-[10px] uppercase tracking-wide text-emerald-200/90">
+          Pool connected · 0.05% fee · slippage applies
         </p>
       )}
 
-      <div className="rounded-2xl border border-cyan-500/35 bg-[#050510] p-1 shadow-[0_0_48px_rgba(0,240,255,0.12),inset_0_1px_0_rgba(255,255,255,0.06)]">
-        <div className="rounded-xl border border-white/5 bg-gradient-to-b from-white/[0.07] to-transparent p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-cyan-400/80">
-              Slippage tolerance
-            </span>
-            <div className="flex gap-1">
-              {SLIPPAGE_OPTIONS.map((o) => (
-                <button
-                  key={o.bps}
-                  type="button"
-                  onClick={() => setSlippageBps(o.bps)}
-                  className={`rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase ${
-                    slippageBps === o.bps
-                      ? "border-cyan-400 bg-cyan-500/20 text-cyan-200 shadow-[0_0_12px_rgba(0,240,255,0.3)]"
-                      : "border-white/10 text-cyan-100/50 hover:border-cyan-500/30"
-                  }`}
-                >
-                  {o.label}
-                </button>
-              ))}
+      <div className="rounded-[1.25rem] border border-cyan-500/30 bg-[#050510] p-1 shadow-[0_0_60px_rgba(0,240,255,0.12),inset_0_1px_0_rgba(255,255,255,0.06)]">
+        <div className="rounded-[1.1rem] border border-white/[0.06] bg-gradient-to-b from-white/[0.08] to-transparent p-5">
+          {ammReady && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-cyan-400/80">
+                Slippage
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {SLIPPAGE_OPTIONS.map((o) => (
+                  <button
+                    key={o.bps}
+                    type="button"
+                    onClick={() => setSlippageBps(o.bps)}
+                    className={`rounded-lg border px-2.5 py-1 font-mono text-[10px] font-bold uppercase ${
+                      slippageBps === o.bps
+                        ? "border-cyan-400 bg-cyan-500/25 text-cyan-100 shadow-[0_0_14px_rgba(0,240,255,0.35)]"
+                        : "border-white/10 text-cyan-100/45 hover:border-cyan-500/30"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="rounded-xl border border-fuchsia-500/20 bg-black/40 p-4">
+          <div className="rounded-xl border border-fuchsia-500/25 bg-black/50 p-4 backdrop-blur-sm">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-cyan-100/60">You pay</span>
+              <span className="text-xs font-medium text-cyan-100/55">You pay</span>
               {payBal !== undefined && (
-                <span className="font-mono text-[10px] text-cyan-500/60">
-                  Bal {formatUnits(payBal as bigint, STABLE_TOKEN_DECIMALS)}
+                <span className="font-mono text-[10px] text-cyan-500/55">
+                  Balance {formatUnits(payBal as bigint, STABLE_TOKEN_DECIMALS)}
                 </span>
               )}
             </div>
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2 sm:flex-nowrap">
               <input
                 value={amountIn}
                 onChange={(e) => setAmountIn(e.target.value)}
                 inputMode="decimal"
                 placeholder="0.0"
-                className="min-w-0 flex-1 border-none bg-transparent font-mono text-3xl font-bold tracking-tight text-white outline-none placeholder:text-white/20"
+                className="min-w-0 flex-1 border-none bg-transparent font-mono text-3xl font-bold tracking-tight text-white outline-none placeholder:text-white/15"
               />
-              <div className="flex shrink-0 gap-1">
+              <div className="flex shrink-0 gap-1.5">
                 <button
                   type="button"
                   onClick={setMax}
                   disabled={!isConnected || payBal === undefined}
-                  className="rounded-lg border border-cyan-500/40 px-2 py-1.5 font-mono text-[10px] font-bold uppercase text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-30"
+                  className="rounded-lg border border-cyan-500/45 px-2.5 py-2 font-mono text-[10px] font-bold uppercase text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-30"
                 >
                   Max
                 </button>
-                <div className="flex rounded-lg border border-white/15 bg-black/60 p-0.5">
+                <div className="flex rounded-lg border border-white/12 bg-black/70 p-0.5">
                   <button
                     type="button"
                     onClick={() => setPaySide("USDC")}
-                    className={`rounded-md px-2.5 py-1.5 font-mono text-[10px] font-bold uppercase ${
-                      paySide === "USDC" ? "bg-cyan-500/25 text-cyan-200" : "text-white/40"
+                    className={`rounded-md px-3 py-2 font-mono text-[10px] font-bold uppercase transition-colors ${
+                      paySide === "USDC" ? "bg-cyan-500/30 text-cyan-100 shadow-[0_0_12px_rgba(0,240,255,0.2)]" : "text-white/35"
                     }`}
                   >
                     USDC
@@ -343,8 +442,8 @@ export default function SwapPage() {
                   <button
                     type="button"
                     onClick={() => setPaySide("EURC")}
-                    className={`rounded-md px-2.5 py-1.5 font-mono text-[10px] font-bold uppercase ${
-                      paySide === "EURC" ? "bg-fuchsia-500/25 text-fuchsia-200" : "text-white/40"
+                    className={`rounded-md px-3 py-2 font-mono text-[10px] font-bold uppercase transition-colors ${
+                      paySide === "EURC" ? "bg-fuchsia-500/30 text-fuchsia-100 shadow-[0_0_12px_rgba(255,43,214,0.15)]" : "text-white/35"
                     }`}
                   >
                     EURC
@@ -354,93 +453,132 @@ export default function SwapPage() {
             </div>
           </div>
 
-          <div className="flex justify-center py-2">
+          <div className="flex justify-center py-3">
             <button
               type="button"
               onClick={flip}
-              className="rounded-full border border-cyan-400/50 bg-black/80 p-2.5 text-cyan-300 shadow-[0_0_20px_rgba(0,240,255,0.25)] transition-transform hover:scale-105"
+              className="rounded-full border border-cyan-400/55 bg-gradient-to-b from-zinc-900 to-black p-3 text-cyan-300 shadow-[0_0_28px_rgba(0,240,255,0.35)] transition-transform hover:scale-105 active:scale-95"
               aria-label="Flip direction"
             >
               <ArrowDown className="size-5" />
             </button>
           </div>
 
-          <div className="rounded-xl border border-emerald-500/20 bg-black/40 p-4">
-            <span className="text-xs font-medium text-emerald-100/60">You receive</span>
-            <div className="mt-1 flex items-baseline justify-between gap-2">
-              <p className="font-mono text-3xl font-bold text-white">
-                {canQuote ? formatUnits(quoteOut, STABLE_TOKEN_DECIMALS) : "—"}
+          <div className="rounded-xl border border-emerald-500/25 bg-black/50 p-4 backdrop-blur-sm">
+            <span className="text-xs font-medium text-emerald-100/55">You receive (est.)</span>
+            <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
+              <p className="font-mono text-3xl font-bold tabular-nums text-white">
+                {parsedIn > B0 ? formatUnits(estOut, STABLE_TOKEN_DECIMALS) : "—"}
               </p>
-              <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 font-mono text-[10px] font-bold uppercase text-emerald-200">
+              <span className="rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-wide text-emerald-200">
                 {receiveSide}
               </span>
             </div>
-            <p className="mt-2 font-mono text-[10px] leading-relaxed text-white/45">
-              Pool fee 0.05% · Min. out ({slippageBps / 100}% slip):{" "}
-              {quoteOut > B0 ? formatUnits(minOut, STABLE_TOKEN_DECIMALS) : "—"} {receiveSide}
-            </p>
-            {vault && (
-              <p className="mt-1 font-mono text-[10px] text-white/35">
-                Reserves · USDC {formatUnits(rU, STABLE_TOKEN_DECIMALS)} · EURC{" "}
-                {formatUnits(rE, STABLE_TOKEN_DECIMALS)}
-                {tLp === B0 && " · empty pool"}
+            <div className="mt-3 space-y-1 font-mono text-[10px] leading-relaxed text-white/40">
+              <p>
+                Price impact:{" "}
+                <span className="text-cyan-200/90">
+                  {ammReady && idealOut > B0 && quoteOut > B0
+                    ? `${(priceImpactBps / 100).toFixed(2)}%`
+                    : ammReady
+                      ? "—"
+                      : "0% (no pool)"}
+                </span>
               </p>
-            )}
+              {ammReady && quoteOut > B0 && (
+                <p>
+                  Min. out ({slippageBps / 100}% slip):{" "}
+                  <span className="text-emerald-200/80">{formatUnits(minOut, STABLE_TOKEN_DECIMALS)}</span> {receiveSide}
+                </p>
+              )}
+              {ammReady && (
+                <p className="text-white/30">
+                  Reserves USDC {formatUnits(rU, STABLE_TOKEN_DECIMALS)} · EURC {formatUnits(rE, STABLE_TOKEN_DECIMALS)}
+                </p>
+              )}
+            </div>
           </div>
 
-          <div className="mt-4 space-y-2">
+          {!ammReady && (
+            <div className="mt-4">
+              <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-cyan-500/70">
+                Recipient address
+              </label>
+              <input
+                value={recipient}
+                onChange={(e) => setRecipient(e.target.value)}
+                placeholder="0x…"
+                spellCheck={false}
+                className="mt-2 w-full rounded-xl border border-white/10 bg-black/60 px-3 py-3 font-mono text-sm text-cyan-50 outline-none ring-cyan-500/30 placeholder:text-white/25 focus:border-cyan-500/50 focus:ring-2"
+              />
+              {recipient.trim() !== "" && !recipientValid && (
+                <p className="mt-1 text-xs text-red-400/90">Enter a valid 0x address</p>
+              )}
+            </div>
+          )}
+
+          <div className="mt-5 space-y-2">
             {!isConnected ? (
-              <p className="text-center font-mono text-xs text-cyan-500/70">Connect wallet to trade</p>
-            ) : (
+              <p className="py-3 text-center font-mono text-xs text-cyan-500/60">Connect wallet to continue</p>
+            ) : ammReady ? (
               <>
-                {vault && needApproval && parsedIn > B0 && (
+                {needApproval && parsedIn > B0 && (
                   <button
                     type="button"
                     disabled={busy !== null}
                     onClick={onApprove}
-                    className="w-full rounded-xl border border-fuchsia-500/50 bg-fuchsia-500/15 py-3 font-mono text-sm font-bold uppercase tracking-wide text-fuchsia-100 shadow-[0_0_24px_rgba(255,43,214,0.15)] hover:bg-fuchsia-500/25 disabled:opacity-40"
+                    className="w-full rounded-xl border border-fuchsia-500/50 bg-fuchsia-500/15 py-3.5 font-mono text-sm font-bold uppercase tracking-wide text-fuchsia-100 shadow-[0_0_24px_rgba(255,43,214,0.18)] hover:bg-fuchsia-500/25 disabled:opacity-40"
                   >
                     {busy === "approve" ? "Approving…" : `Approve ${paySide}`}
                   </button>
                 )}
                 <button
                   type="button"
-                  disabled={!canSwapOnChain || busy !== null}
+                  disabled={!canAmmSwap || busy !== null}
                   onClick={onSwap}
-                  className="w-full rounded-xl border border-cyan-400/60 bg-gradient-to-r from-cyan-500/30 via-fuchsia-500/20 to-emerald-500/25 py-3.5 font-mono text-sm font-bold uppercase tracking-wide text-white shadow-[0_0_32px_rgba(0,240,255,0.2)] disabled:cursor-not-allowed disabled:opacity-35"
+                  className="w-full rounded-xl border border-cyan-400/60 bg-gradient-to-r from-cyan-500/35 via-fuchsia-500/25 to-emerald-500/30 py-4 font-mono text-sm font-bold uppercase tracking-wide text-white shadow-[0_0_40px_rgba(0,240,255,0.22)] disabled:cursor-not-allowed disabled:opacity-35"
                 >
                   {busy === "swap"
                     ? "Swapping…"
-                    : !vault
-                      ? "Set vault to swap"
-                      : needApproval && parsedIn > B0
-                        ? "Approve token first"
-                        : tLp === B0
-                          ? "Pool empty — add liquidity"
-                          : parsedIn <= B0
-                            ? "Enter amount"
-                            : "Swap"}
+                    : needApproval && parsedIn > B0
+                      ? "Approve token first"
+                      : parsedIn <= B0
+                        ? "Enter amount"
+                        : "Swap"}
                 </button>
               </>
+            ) : (
+              <button
+                type="button"
+                disabled={!canTransfer || busy !== null}
+                onClick={onTransfer}
+                className="w-full rounded-xl border border-cyan-400/60 bg-gradient-to-r from-cyan-500/35 via-fuchsia-500/25 to-emerald-500/30 py-4 font-mono text-sm font-bold uppercase tracking-wide text-white shadow-[0_0_40px_rgba(0,240,255,0.22)] disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                {busy === "transfer"
+                  ? "Sending…"
+                  : parsedIn <= B0
+                    ? "Enter amount"
+                    : !recipientValid
+                      ? "Enter recipient"
+                      : `Send ${paySide}`}
+              </button>
             )}
           </div>
         </div>
       </div>
 
-      {(msg || lastTxHash) && (
-        <div className="space-y-2 rounded-xl border border-cyan-500/25 bg-[#050510] px-4 py-3 font-mono text-xs text-cyan-100/90 shadow-[0_0_20px_rgba(0,240,255,0.08)]">
-          {msg && <p>{msg}</p>}
-          {lastTxHash && (
-            <a
-              href={`${explorerBase}/tx/${lastTxHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-cyan-400 underline-offset-2 hover:text-cyan-300 hover:underline"
-            >
-              View tx {lastTxHash.slice(0, 10)}…{lastTxHash.slice(-8)}
-              <ExternalLink className="size-3.5" aria-hidden />
-            </a>
-          )}
+      {lastTxHash && (
+        <div className="mt-6 rounded-xl border border-cyan-500/25 bg-[#050510] px-4 py-4 font-mono text-xs text-cyan-100/90 shadow-[0_0_24px_rgba(0,240,255,0.08)]">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-500/70">Last transaction</p>
+          <a
+            href={`${explorerBase}/tx/${lastTxHash}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-flex items-center gap-1.5 text-cyan-400 underline-offset-2 hover:text-cyan-300 hover:underline"
+          >
+            {lastTxHash.slice(0, 18)}…{lastTxHash.slice(-10)}
+            <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+          </a>
         </div>
       )}
     </div>
