@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "compile": "hardhat compile",
-    "deploy:arc": "hardhat run scripts/deploy.ts --network arcTestnet"
+    "deploy:arc": "hardhat run scripts/deploy.ts --network arcTestnet",
+    "deploy:vercel": "vercel --prod"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",
