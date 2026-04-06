@@ -9,6 +9,7 @@ const navFunds = [
   { href: "/marketplace", label: "Marketplace" },
   { href: "/create-fund", label: "Create fund" },
   { href: "/my-funds", label: "My funds" },
+  { href: "/stable-swap", label: "USDC / EURC" },
 ] as const;
 
 const navAgent = [{ href: "/train-agent", label: "Train agent" }] as const;
