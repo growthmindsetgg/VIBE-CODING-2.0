@@ -38,6 +38,12 @@ export default function HomePage() {
             GitHub
           </a>
           <Link
+            href="/swap"
+            className="text-xs font-bold uppercase tracking-wide text-[#a970ff] hover:text-white sm:text-sm"
+          >
+            Swap
+          </Link>
+          <Link
             href="/marketplace"
             className="inline-flex items-center gap-2 border-[3px] border-black bg-[#1f69ff] px-4 py-2 text-xs font-bold uppercase tracking-wide text-white shadow-[4px_4px_0_0_#000] transition-transform hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] sm:text-sm"
           >
@@ -76,6 +82,13 @@ export default function HomePage() {
             >
               How it works
             </a>
+            <Link
+              href="/swap"
+              className="inline-flex items-center justify-center border-[3px] border-black bg-[#1f69ff] px-8 py-4 text-sm font-bold uppercase tracking-wide text-white shadow-[6px_6px_0_0_#000] transition-transform hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[5px_5px_0_0_#000]"
+            >
+              Swap USDC / EURC
+              <ArrowRight className="ml-2 size-4" aria-hidden />
+            </Link>
           </div>
           <div className="mt-10 flex flex-wrap gap-2">
             {["Arc testnet", "USDC flows", "ERC-404-style", "RainbowKit"].map((t) => (
