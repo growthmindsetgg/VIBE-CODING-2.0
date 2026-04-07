@@ -9,7 +9,9 @@ import { formatUnits, isAddress } from "viem";
 import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { MissingStableVaultConfig } from "@/components/stable-vault/missing-config";
+import { NonDeployerPoolMessage } from "@/components/stable-vault/non-deployer-pool-message";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
+import { isPoolConfigDeployer, poolConfigDeployerAddress } from "@/lib/contracts/pool-deployer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -207,11 +209,15 @@ export default function AdminVaultPage() {
       </div>
 
       {!ready ? (
-        <MissingStableVaultConfig
-          saveBrowserOverrides={saveBrowserOverrides}
-          clearBrowserOverrides={clearBrowserOverrides}
-          storedSnapshot={storedSnapshot}
-        />
+        canEditPoolConfig ? (
+          <MissingStableVaultConfig
+            saveBrowserOverrides={saveBrowserOverrides}
+            clearBrowserOverrides={clearBrowserOverrides}
+            storedSnapshot={storedSnapshot}
+          />
+        ) : (
+          <NonDeployerPoolMessage />
+        )
       ) : (
         <>
           <Card variant="brutal" className="border-[#9146ff]/30">

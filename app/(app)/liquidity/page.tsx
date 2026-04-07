@@ -5,7 +5,9 @@ import { erc20Abi, formatUnits, maxUint256, parseUnits, zeroAddress } from "viem
 import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { MissingStableVaultConfig } from "@/components/stable-vault/missing-config";
+import { NonDeployerPoolMessage } from "@/components/stable-vault/non-deployer-pool-message";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
+import { isPoolConfigDeployer, poolConfigDeployerAddress } from "@/lib/contracts/pool-deployer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -242,6 +244,9 @@ export default function LiquidityPage() {
     return formatUnits(myLp as bigint, STABLE_TOKEN_DECIMALS);
   }, [address, myLp]);
 
+  const deployerGateActive = poolConfigDeployerAddress() !== undefined;
+  const canEditPoolConfig = !deployerGateActive || isPoolConfigDeployer(address);
+
   if (!ready) {
     return (
       <div className="mx-auto max-w-lg space-y-6">
@@ -252,11 +257,15 @@ export default function LiquidityPage() {
           </h1>
           <p className="mt-2 text-sm text-zinc-600">Provide USDC + EURC to the shared stable pool.</p>
         </div>
-        <MissingStableVaultConfig
-          saveBrowserOverrides={saveBrowserOverrides}
-          clearBrowserOverrides={clearBrowserOverrides}
-          storedSnapshot={storedSnapshot}
-        />
+        {canEditPoolConfig ? (
+          <MissingStableVaultConfig
+            saveBrowserOverrides={saveBrowserOverrides}
+            clearBrowserOverrides={clearBrowserOverrides}
+            storedSnapshot={storedSnapshot}
+          />
+        ) : (
+          <NonDeployerPoolMessage />
+        )}
       </div>
     );
   }

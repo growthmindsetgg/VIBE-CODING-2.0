@@ -48,8 +48,10 @@ export function MissingStableVaultConfig({ saveBrowserOverrides, clearBrowserOve
           </CardTitle>
           <CardDescription variant="brutal">
             <strong className="text-black">Production (Vercel):</strong> Project → Settings → Environment Variables → add
-            all three → Redeploy. <strong className="text-black">Local:</strong> put them in{" "}
-            <span className="font-mono">.env.local</span> and restart <span className="font-mono">npm run dev</span>.
+            all three → Redeploy. Set <span className="font-mono">NEXT_PUBLIC_POOL_DEPLOYER_ADDRESS</span> to your wallet
+            so only you see this form; everyone else uses the public env addresses.{" "}
+            <strong className="text-black">Local:</strong> put them in <span className="font-mono">.env.local</span> and
+            restart <span className="font-mono">npm run dev</span>.
           </CardDescription>
         </CardHeader>
         <CardContent>
