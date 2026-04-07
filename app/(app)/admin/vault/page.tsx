@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { formatUnits, isAddress } from "viem";
 import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
+import { requireTxSuccess } from "@/lib/require-tx-success";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,7 +116,8 @@ export default function AdminVaultPage() {
         functionName: "nudgePool",
         args: [],
       });
-      await waitForTransactionReceipt(config, { hash });
+      const rc = await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(rc, "nudgePool reverted.");
       setMsg("nudgePool done.");
       await refreshPool();
     } catch (e) {
@@ -142,7 +144,8 @@ export default function AdminVaultPage() {
         functionName: "microPullAndNudge",
         args: [u as `0x${string}`],
       });
-      await waitForTransactionReceipt(config, { hash });
+      const rc2 = await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(rc2, "microPullAndNudge reverted.");
       setMsg("microPullAndNudge done.");
       await refreshPool();
     } catch (e) {

@@ -12,6 +12,7 @@ import { fundManagerAbi } from "@/lib/abis/fund-manager";
 import { usdcAddress } from "@/lib/contracts/addresses";
 import type { VibeFund } from "@/lib/types/fund";
 import { arcTestnet } from "@/lib/chains/arc";
+import { requireTxSuccess } from "@/lib/require-tx-success";
 
 type OnchainFundPanelProps = {
   fund: VibeFund;
@@ -116,7 +117,7 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
           functionName: "approve",
           args: [fm, maxUint256],
         });
-        await waitForTransactionReceipt(config, { hash: approveHash });
+        requireTxSuccess(await waitForTransactionReceipt(config, { hash: approveHash }), "Approve reverted.");
       }
 
       const hash = await writeContractAsync({
@@ -126,7 +127,7 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
         functionName: "subscribe",
         args: [amount],
       });
-      await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(await waitForTransactionReceipt(config, { hash }), "Subscribe reverted.");
       return `Subscribed · tx ${hash.slice(0, 10)}…`;
     });
 
@@ -154,7 +155,7 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
         functionName: "deposit",
         args: [amount],
       });
-      await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(await waitForTransactionReceipt(config, { hash }), "Deposit reverted.");
       return `Deposited to vault · tx ${hash.slice(0, 10)}…`;
     });
 
@@ -173,7 +174,7 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
         functionName: "transfer",
         args: [to as `0x${string}`, wei],
       });
-      await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(await waitForTransactionReceipt(config, { hash }), "Transfer reverted.");
       return `Transfer sent · ${hash.slice(0, 10)}…`;
     });
 

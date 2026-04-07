@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
 import { arcTestnet } from "@/lib/chains/arc";
+import { requireTxSuccess } from "@/lib/require-tx-success";
 import { ARC_TESTNET_EURC, ARC_TESTNET_USDC } from "@/lib/contracts/addresses";
 import { B0, STABLE_TOKEN_DECIMALS, STABLE_VAULT_CHAIN_ID } from "@/lib/stable-vault/constants";
 import {
@@ -240,7 +241,8 @@ export default function SwapPage() {
         functionName: "approve",
         args: [vault, maxUint256],
       });
-      await waitForTransactionReceipt(config, { hash });
+      const approveRc = await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(approveRc, "Approval reverted.");
       setLastTxHash(hash);
       toast.success("Token approved", { description: shortAddr(hash) });
       await refetchAllowance();
@@ -263,7 +265,8 @@ export default function SwapPage() {
         functionName: paySide === "USDC" ? "swapUsdcForEurc" : "swapEurcForUsdc",
         args: [parsedIn, minOut],
       });
-      await waitForTransactionReceipt(config, { hash });
+      const swapRc = await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(swapRc, "Swap reverted — check slippage, pool liquidity, and ArcScan.");
       setLastTxHash(hash);
       toast.success("Swap confirmed", {
         description: (
@@ -299,7 +302,8 @@ export default function SwapPage() {
         functionName: "transfer",
         args: [to, parsedIn],
       });
-      await waitForTransactionReceipt(config, { hash });
+      const trRc = await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(trRc, "Transfer reverted.");
       setLastTxHash(hash);
       toast.success(`${paySide} transferred (same token — not a cross-asset swap)`, {
         description: (

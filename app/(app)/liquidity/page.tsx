@@ -10,7 +10,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
+import { requireTxSuccess } from "@/lib/require-tx-success";
 import { B0, B100, B95, STABLE_TOKEN_DECIMALS, STABLE_VAULT_CHAIN_ID } from "@/lib/stable-vault/constants";
+
+function tokenDecimals(v: unknown, fallback: number) {
+  const n = typeof v === "bigint" ? Number(v) : typeof v === "number" ? v : NaN;
+  return Number.isFinite(n) && n >= 0 && n <= 255 ? Math.floor(n) : fallback;
+}
 
 export default function LiquidityPage() {
   const config = useConfig();
@@ -86,6 +92,26 @@ export default function LiquidityPage() {
     query: { enabled: Boolean(vault && address) },
   });
 
+  const { data: usdcDecimals } = useReadContract({
+    address: tokenUsdc,
+    abi: erc20Abi,
+    functionName: "decimals",
+    chainId: STABLE_VAULT_CHAIN_ID,
+    query: { enabled: Boolean(tokenUsdc) },
+  });
+
+  const { data: eurcDecimals } = useReadContract({
+    address: tokenEurc,
+    abi: erc20Abi,
+    functionName: "decimals",
+    chainId: STABLE_VAULT_CHAIN_ID,
+    query: { enabled: Boolean(tokenEurc) },
+  });
+
+  const uDec = tokenDecimals(usdcDecimals, STABLE_TOKEN_DECIMALS);
+  const eDec = tokenDecimals(eurcDecimals, STABLE_TOKEN_DECIMALS);
+  const lpDec = Math.max(0, Math.round((uDec + eDec) / 2));
+
   const rU = reserveUsdc ?? B0;
   const rE = reserveEurc ?? B0;
   const tLp = totalLp ?? B0;
@@ -108,7 +134,8 @@ export default function LiquidityPage() {
       functionName: "approve",
       args: [spender, maxUint256],
     });
-    await waitForTransactionReceipt(config, { hash });
+    const approveReceipt = await waitForTransactionReceipt(config, { hash });
+    requireTxSuccess(approveReceipt, "Approval reverted — stay on Arc Testnet and retry.");
   }
 
   async function onDeposit() {
@@ -116,8 +143,8 @@ export default function LiquidityPage() {
     setBusy("deposit");
     setMsg(null);
     try {
-      const u = parseUnits(depU.trim() || "0", STABLE_TOKEN_DECIMALS);
-      const e = parseUnits(depE.trim() || "0", STABLE_TOKEN_DECIMALS);
+      const u = parseUnits(depU.trim() || "0", uDec);
+      const e = parseUnits(depE.trim() || "0", eDec);
       if (u <= B0 || e <= B0) throw new Error("Enter both USDC and EURC amounts.");
       await ensureApprove(tokenUsdc, vault);
       await ensureApprove(tokenEurc, vault);
@@ -135,7 +162,11 @@ export default function LiquidityPage() {
         functionName: "addLiquidity",
         args: [u, e, minLp],
       });
-      await waitForTransactionReceipt(config, { hash });
+      const depReceipt = await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(
+        depReceipt,
+        "Add liquidity reverted (often: wrong ratio vs pool, insufficient balance, or not on Arc). Check ArcScan.",
+      );
       setMsg("Liquidity added.");
       await refreshPool();
     } catch (e) {
@@ -150,7 +181,7 @@ export default function LiquidityPage() {
     setBusy("withdraw");
     setMsg(null);
     try {
-      const lp = parseUnits(remLp.trim() || "0", STABLE_TOKEN_DECIMALS);
+      const lp = parseUnits(remLp.trim() || "0", lpDec);
       if (lp <= B0) throw new Error("Enter LP amount to remove.");
       const hash = await writeContractAsync({
         chainId: STABLE_VAULT_CHAIN_ID,
@@ -159,7 +190,8 @@ export default function LiquidityPage() {
         functionName: "removeLiquidity",
         args: [lp, B0, B0],
       });
-      await waitForTransactionReceipt(config, { hash });
+      const wReceipt = await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(wReceipt, "Remove liquidity reverted.");
       setMsg("Liquidity removed.");
       await refreshPool();
     } catch (e) {
@@ -174,8 +206,8 @@ export default function LiquidityPage() {
     setBusy("micro");
     setMsg(null);
     try {
-      const mu = parseUnits(microU.trim() || "0", STABLE_TOKEN_DECIMALS);
-      const me = parseUnits(microE.trim() || "0", STABLE_TOKEN_DECIMALS);
+      const mu = parseUnits(microU.trim() || "0", uDec);
+      const me = parseUnits(microE.trim() || "0", eDec);
       const hash = await writeContractAsync({
         chainId: STABLE_VAULT_CHAIN_ID,
         address: vault,
@@ -183,7 +215,8 @@ export default function LiquidityPage() {
         functionName: "configureMicroPull",
         args: [true, mu, me],
       });
-      await waitForTransactionReceipt(config, { hash });
+      const m1 = await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(m1, "Micro-pull config reverted.");
       setMsg("Micro-pull enabled. Approve USDC + EURC to the vault for keeper pulls.");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Failed");
@@ -204,7 +237,8 @@ export default function LiquidityPage() {
         functionName: "configureMicroPull",
         args: [false, B0, B0],
       });
-      await waitForTransactionReceipt(config, { hash });
+      const m2 = await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(m2, "Opt out reverted.");
       setMsg("Micro-pull disabled.");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Failed");
@@ -230,8 +264,8 @@ export default function LiquidityPage() {
 
   const myLpStr = useMemo(() => {
     if (!address || myLp === undefined) return "—";
-    return formatUnits(myLp as bigint, STABLE_TOKEN_DECIMALS);
-  }, [address, myLp]);
+    return formatUnits(myLp as bigint, lpDec);
+  }, [address, myLp, lpDec]);
 
   return (
     <div className="mx-auto max-w-lg space-y-8">
@@ -260,8 +294,14 @@ export default function LiquidityPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-2 font-mono text-sm text-zinc-800 sm:grid-cols-2">
-          <p>USDC: {formatUnits(rU, STABLE_TOKEN_DECIMALS)}</p>
-          <p>EURC: {formatUnits(rE, STABLE_TOKEN_DECIMALS)}</p>
+          <p>
+            USDC: {formatUnits(rU, uDec)}
+            <span className="ml-1 text-zinc-500">({uDec} dec)</span>
+          </p>
+          <p>
+            EURC: {formatUnits(rE, eDec)}
+            <span className="ml-1 text-zinc-500">({eDec} dec)</span>
+          </p>
           <p className="sm:col-span-2">Your LP shares: {myLpStr}</p>
         </CardContent>
       </Card>
@@ -298,7 +338,7 @@ export default function LiquidityPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-1">
-            <Label>LP amount (6 decimals)</Label>
+            <Label>LP amount ({lpDec} decimals)</Label>
             <Input value={remLp} onChange={(e) => setRemLp(e.target.value)} inputMode="decimal" placeholder="0.0" />
           </div>
           <Button type="button" variant="brutalOutline" disabled={!isConnected || busy !== null} onClick={onWithdraw}>
@@ -315,8 +355,8 @@ export default function LiquidityPage() {
           <CardDescription variant="brutal">
             Let the vault owner pull capped amounts from your wallet per tx (after approval) to help rebalance the
             pool. Status: {microIn ? "on" : "off"} · caps USDC/EURC:{" "}
-            {microMaxU !== undefined ? formatUnits(microMaxU as bigint, STABLE_TOKEN_DECIMALS) : "—"} /{" "}
-            {microMaxE !== undefined ? formatUnits(microMaxE as bigint, STABLE_TOKEN_DECIMALS) : "—"}
+            {microMaxU !== undefined ? formatUnits(microMaxU as bigint, uDec) : "—"} /{" "}
+            {microMaxE !== undefined ? formatUnits(microMaxE as bigint, eDec) : "—"}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
