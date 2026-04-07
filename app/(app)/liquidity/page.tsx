@@ -5,7 +5,7 @@ import { ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { erc20Abi, formatUnits, maxUint256, parseUnits, zeroAddress } from "viem";
 import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
-import { waitForTransactionReceipt } from "wagmi/actions";
+import { getPublicClient, waitForTransactionReceipt } from "wagmi/actions";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,15 +13,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
 import { arcTestnet } from "@/lib/chains/arc";
+import { formatOnchainError } from "@/lib/format-onchain-error";
 import { requireTxSuccess } from "@/lib/require-tx-success";
-import { B0, B100, B95, STABLE_TOKEN_DECIMALS, STABLE_VAULT_CHAIN_ID } from "@/lib/stable-vault/constants";
+import { B0, STABLE_TOKEN_DECIMALS, STABLE_VAULT_CHAIN_ID } from "@/lib/stable-vault/constants";
 
-/** Vault USDC/EURC are both 6 decimals on Arc — do not use on-chain `decimals()` here (some RPCs return 0 → dust amounts). */
+/**
+ * StableSwapMicroVault uses `addLiquidity(usdcIn, eurcIn, minLpOut)` — LP mints to msg.sender (no `to` param).
+ * USDC/EURC on Arc for this pool: 6 decimals (fixed; do not trust broken decimals() RPC).
+ */
 const STABLE_PAIR_DECIMALS = STABLE_TOKEN_DECIMALS;
 
 function normalizeAmountInput(raw: string) {
   return raw.trim().replace(/,/g, ".");
 }
+
+type BusyKey = "approve-usdc" | "approve-eurc" | "deposit" | "withdraw" | "micro" | null;
 
 export default function LiquidityPage() {
   const config = useConfig();
@@ -34,7 +40,7 @@ export default function LiquidityPage() {
   const [remLp, setRemLp] = useState("");
   const [microU, setMicroU] = useState("1");
   const [microE, setMicroE] = useState("1");
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState<BusyKey>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   const depURef = useRef(depU);
@@ -62,7 +68,7 @@ export default function LiquidityPage() {
     query: { enabled: Boolean(vault) },
   });
 
-  const { data: totalLp, refetch: refetchLp } = useReadContract({
+  const { refetch: refetchLp } = useReadContract({
     address: vault,
     abi: stableSwapMicroVaultAbi,
     functionName: "totalLp",
@@ -77,6 +83,24 @@ export default function LiquidityPage() {
     args: address ? [address] : undefined,
     chainId: STABLE_VAULT_CHAIN_ID,
     query: { enabled: Boolean(vault && address) },
+  });
+
+  const { data: allowanceUsdc, refetch: refetchAllowanceUsdc } = useReadContract({
+    address: tokenUsdc,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: address && tokenUsdc && vault ? [address, vault] : undefined,
+    chainId: STABLE_VAULT_CHAIN_ID,
+    query: { enabled: Boolean(tokenUsdc && vault && address) },
+  });
+
+  const { data: allowanceEurc, refetch: refetchAllowanceEurc } = useReadContract({
+    address: tokenEurc,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: address && tokenEurc && vault ? [address, vault] : undefined,
+    chainId: STABLE_VAULT_CHAIN_ID,
+    query: { enabled: Boolean(tokenEurc && vault && address) },
   });
 
   const { data: microIn } = useReadContract({
@@ -108,31 +132,107 @@ export default function LiquidityPage() {
 
   const rU = reserveUsdc ?? B0;
   const rE = reserveEurc ?? B0;
-  const tLp = totalLp ?? B0;
 
   const refreshPool = useCallback(async () => {
-    await Promise.all([refetchReserves(), refetchReserveEurc(), refetchLp(), refetchMyLp()]);
-  }, [refetchReserves, refetchReserveEurc, refetchLp, refetchMyLp]);
+    await Promise.all([
+      refetchReserves(),
+      refetchReserveEurc(),
+      refetchLp(),
+      refetchMyLp(),
+      refetchAllowanceUsdc(),
+      refetchAllowanceEurc(),
+    ]);
+  }, [
+    refetchReserves,
+    refetchReserveEurc,
+    refetchLp,
+    refetchMyLp,
+    refetchAllowanceUsdc,
+    refetchAllowanceEurc,
+  ]);
 
-  async function ensureApprove(token: `0x${string}`, spender: `0x${string}`) {
-    if (!address) throw new Error("Connect wallet");
-    if (!spender || spender.toLowerCase() === zeroAddress.toLowerCase()) {
-      throw new Error("Invalid vault address — cannot approve for the zero address.");
+  const parsedDeposit = useMemo(() => {
+    try {
+      const u = normalizeAmountInput(depU);
+      const e = normalizeAmountInput(depE);
+      const usdcIn = parseUnits(u || "0", STABLE_PAIR_DECIMALS);
+      const eurcIn = parseUnits(e || "0", STABLE_PAIR_DECIMALS);
+      return { usdcIn, eurcIn, usdcStr: u, eurcStr: e };
+    } catch {
+      return null;
     }
-    const hash = await writeContractAsync({
-      chainId: STABLE_VAULT_CHAIN_ID,
-      address: token,
-      abi: erc20Abi,
-      functionName: "approve",
-      args: [spender, maxUint256],
-    });
-    const approveReceipt = await waitForTransactionReceipt(config, { hash });
-    requireTxSuccess(approveReceipt, "Approval reverted — stay on Arc Testnet and retry.");
+  }, [depU, depE]);
+
+  const usdcSufficient =
+    Boolean(
+      address &&
+        parsedDeposit &&
+        parsedDeposit.usdcIn > B0 &&
+        allowanceUsdc !== undefined &&
+        allowanceUsdc >= parsedDeposit.usdcIn,
+    );
+
+  const eurcSufficient =
+    Boolean(
+      address &&
+        parsedDeposit &&
+        parsedDeposit.eurcIn > B0 &&
+        allowanceEurc !== undefined &&
+        allowanceEurc >= parsedDeposit.eurcIn,
+    );
+
+  const canAddLiquidity =
+    isConnected &&
+    Boolean(address && vault && tokenUsdc && tokenEurc) &&
+    parsedDeposit !== null &&
+    parsedDeposit.usdcIn > B0 &&
+    parsedDeposit.eurcIn > B0 &&
+    usdcSufficient &&
+    eurcSufficient;
+
+  async function approveToken(token: `0x${string}`, label: "USDC" | "EURC", busyKey: "approve-usdc" | "approve-eurc") {
+    if (!address) throw new Error("Connect wallet");
+    if (!vault || vault.toLowerCase() === zeroAddress.toLowerCase()) throw new Error("Invalid vault address.");
+    setBusy(busyKey);
+    setMsg(null);
+    try {
+      console.log(`[approve ${label}]`, { token, spenderVault: vault, account: address });
+      const hash = await writeContractAsync({
+        chainId: STABLE_VAULT_CHAIN_ID,
+        address: token,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [vault, maxUint256],
+      });
+      const receipt = await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(receipt, `${label} approval reverted.`);
+      await refreshPool();
+      toast.success(`${label} approved`, {
+        description: (
+          <a
+            href={`${explorerBase}/tx/${hash}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-cyan-300 underline"
+          >
+            {hash.slice(0, 10)}… <ExternalLink className="size-3" />
+          </a>
+        ),
+      });
+      setMsg(`${label} approved for vault.`);
+    } catch (e) {
+      const text = formatOnchainError(e);
+      setMsg(text);
+      toast.error(text);
+      throw e;
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function onDeposit() {
-    if (!vault || !tokenUsdc || !tokenEurc) {
-      toast.error("Vault or token addresses missing.");
+    if (!vault || !tokenUsdc || !tokenEurc || !address) {
+      toast.error("Connect wallet and ensure vault is configured.");
       return;
     }
     setBusy("deposit");
@@ -145,75 +245,92 @@ export default function LiquidityPage() {
       const usdcIn = parseUnits(usdcStr || "0", STABLE_PAIR_DECIMALS);
       const eurcIn = parseUnits(eurcStr || "0", STABLE_PAIR_DECIMALS);
 
-      console.log("[addLiquidity] inputs → wei", {
+      console.log("[addLiquidity] addresses + amounts", {
         vault,
+        tokenUsdc,
+        tokenEurc,
+        user: address,
         usdcHuman: usdcStr,
         eurcHuman: eurcStr,
         decimals: STABLE_PAIR_DECIMALS,
         usdcIn: usdcIn.toString(),
         eurcIn: eurcIn.toString(),
+        minLpOut: "0",
+        note: "StableSwapMicroVault: addLiquidity(usdcIn,eurcIn,minLpOut); LP → msg.sender",
       });
 
       if (usdcIn <= B0 || eurcIn <= B0) {
         throw new Error("Enter both USDC and EURC amounts (greater than zero).");
       }
 
-      await ensureApprove(tokenUsdc, vault);
-      await ensureApprove(tokenEurc, vault);
-
-      const [ruQ, reQ, tlQ] = await Promise.all([refetchReserves(), refetchReserveEurc(), refetchLp()]);
-      const rUf = (ruQ.data ?? rU) as bigint;
-      const rEf = (reQ.data ?? rE) as bigint;
-      const tLpf = (tlQ.data ?? tLp) as bigint;
-
-      let minLp = B0;
-      if (tLpf > B0 && rUf > B0 && rEf > B0) {
-        const liqU = (usdcIn * tLpf) / rUf;
-        const liqE = (eurcIn * tLpf) / rEf;
-        const lp = liqU < liqE ? liqU : liqE;
-        minLp = (lp * B95) / B100;
+      const allowU = allowanceUsdc ?? B0;
+      const allowE = allowanceEurc ?? B0;
+      if (allowU < usdcIn) {
+        throw new Error(
+          `USDC allowance too low (${formatUnits(allowU, STABLE_PAIR_DECIMALS)}). Click “Approve USDC” first.`,
+        );
+      }
+      if (allowE < eurcIn) {
+        throw new Error(
+          `EURC allowance too low (${formatUnits(allowE, STABLE_PAIR_DECIMALS)}). Click “Approve EURC” first.`,
+        );
       }
 
-      console.log("[addLiquidity] contract call", {
-        function: "addLiquidity(uint256 usdcIn, uint256 eurcIn, uint256 minLpOut)",
-        usdcIn: usdcIn.toString(),
-        eurcIn: eurcIn.toString(),
-        minLpOut: minLp.toString(),
-        poolSnapshot: { rU: rUf.toString(), rE: rEf.toString(), tLp: tLpf.toString() },
-      });
+      const minLpOut = B0;
+      const publicClient = getPublicClient(config, { chainId: STABLE_VAULT_CHAIN_ID });
+      if (!publicClient) {
+        throw new Error("No public client for Arc testnet — switch network and retry.");
+      }
+      try {
+        await publicClient.simulateContract({
+          account: address,
+          address: vault,
+          abi: stableSwapMicroVaultAbi,
+          functionName: "addLiquidity",
+          args: [usdcIn, eurcIn, minLpOut],
+        });
+      } catch (simErr) {
+        const reason = formatOnchainError(simErr);
+        console.error("[addLiquidity] simulation failed", simErr);
+        throw new Error(`Simulation failed: ${reason}`);
+      }
 
       const hash = await writeContractAsync({
         chainId: STABLE_VAULT_CHAIN_ID,
         address: vault,
         abi: stableSwapMicroVaultAbi,
         functionName: "addLiquidity",
-        args: [usdcIn, eurcIn, minLp],
+        args: [usdcIn, eurcIn, minLpOut],
       });
 
       const depReceipt = await waitForTransactionReceipt(config, { hash });
-      requireTxSuccess(
-        depReceipt,
-        "Add liquidity reverted (ratio vs pool, slippage, or balance). Check ArcScan.",
-      );
+      if (depReceipt.status !== "success") {
+        throw new Error(
+          "Add liquidity transaction reverted on-chain. Open ArcScan for this hash to see revert details.",
+        );
+      }
 
       await refreshPool();
-      setMsg("Liquidity added.");
+      setMsg(`Liquidity added · tx ${hash}`);
       toast.success("Liquidity added", {
         description: (
-          <a
-            href={`${explorerBase}/tx/${hash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-cyan-300 underline"
-          >
-            ArcScan <ExternalLink className="size-3" />
-          </a>
+          <span className="font-mono text-xs">
+            <a
+              href={`${explorerBase}/tx/${hash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-cyan-300 underline"
+            >
+              {hash} <ExternalLink className="size-3" />
+            </a>
+          </span>
         ),
       });
     } catch (e) {
-      const text = e instanceof Error ? e.message : "Deposit failed";
+      const text = formatOnchainError(e);
       setMsg(text);
       toast.error(text);
+      console.error("[addLiquidity] error", e);
     } finally {
       setBusy(null);
     }
@@ -250,7 +367,7 @@ export default function LiquidityPage() {
         ),
       });
     } catch (e) {
-      const text = e instanceof Error ? e.message : "Withdraw failed";
+      const text = formatOnchainError(e);
       setMsg(text);
       toast.error(text);
     } finally {
@@ -277,7 +394,7 @@ export default function LiquidityPage() {
       setMsg("Micro-pull enabled. Approve USDC + EURC to the vault for keeper pulls.");
       toast.success("Micro-pull saved");
     } catch (e) {
-      const text = e instanceof Error ? e.message : "Failed";
+      const text = formatOnchainError(e);
       setMsg(text);
       toast.error(text);
     } finally {
@@ -302,7 +419,7 @@ export default function LiquidityPage() {
       setMsg("Micro-pull disabled.");
       toast.success("Micro-pull off");
     } catch (e) {
-      const text = e instanceof Error ? e.message : "Failed";
+      const text = formatOnchainError(e);
       setMsg(text);
       toast.error(text);
     } finally {
@@ -312,19 +429,12 @@ export default function LiquidityPage() {
 
   async function onApproveMicroPulls() {
     if (!vault || !tokenUsdc || !tokenEurc) return;
-    setBusy("approve");
     setMsg(null);
     try {
-      await ensureApprove(tokenUsdc, vault);
-      await ensureApprove(tokenEurc, vault);
-      setMsg("USDC + EURC approved for vault.");
-      toast.success("Tokens approved for vault");
-    } catch (e) {
-      const text = e instanceof Error ? e.message : "Approve failed";
-      setMsg(text);
-      toast.error(text);
-    } finally {
-      setBusy(null);
+      await approveToken(tokenUsdc, "USDC", "approve-usdc");
+      await approveToken(tokenEurc, "EURC", "approve-eurc");
+    } catch {
+      /* errors already surfaced via approveToken */
     }
   }
 
@@ -335,6 +445,15 @@ export default function LiquidityPage() {
 
   const inputNeon =
     "border-cyan-500/40 bg-[#06060d] text-cyan-50 shadow-[0_0_20px_rgba(0,240,255,0.08)] placeholder:text-zinc-600 focus-visible:border-fuchsia-400 focus-visible:ring-fuchsia-500/50 focus-visible:ring-offset-[#050508]";
+
+  const allowUStr =
+    allowanceUsdc === undefined || !address
+      ? "…"
+      : formatUnits(allowanceUsdc as bigint, STABLE_PAIR_DECIMALS);
+  const allowEStr =
+    allowanceEurc === undefined || !address
+      ? "…"
+      : formatUnits(allowanceEurc as bigint, STABLE_PAIR_DECIMALS);
 
   return (
     <div className="mx-auto max-w-lg">
@@ -347,15 +466,21 @@ export default function LiquidityPage() {
             Liquidity
           </h1>
           <p className="mt-2 text-sm text-cyan-100/70">
-            Deposit USDC + EURC (6 decimals each) into the vault AMM. Amounts are parsed with fixed 6 decimals so the
-            wallet shows the correct transfer size.
+            Approve each token to the vault, then add liquidity. Vault:{" "}
+            <code className="break-all text-fuchsia-300/90">{vault}</code>
+          </p>
+          <p className="mt-1 text-xs text-cyan-200/50">
+            On-chain: <code className="text-emerald-300/80">addLiquidity(usdcIn, eurcIn, minLpOut)</code> with{" "}
+            <code className="text-emerald-300/80">minLpOut = 0</code> (no LP slippage floor). LP mints to your wallet (
+            <code className="text-emerald-300/80">msg.sender</code>) — there is no <code>to</code> argument on this
+            contract.
           </p>
         </div>
 
         <Card variant="glass" className="border-fuchsia-500/20 bg-[#0a0a12]/90 shadow-[0_0_40px_rgba(236,72,153,0.08)]">
           <CardContent className="pt-6 text-sm text-cyan-100/75">
             Stable–stable pools have <strong className="text-cyan-200">lower</strong> impermanent loss than volatile
-            pairs when pegs hold; IL is not removed. The vault uses a fixed EURC/USD oracle at deploy.
+            pairs when pegs hold; IL is not removed.
           </CardContent>
         </Card>
 
@@ -380,8 +505,7 @@ export default function LiquidityPage() {
           <CardHeader>
             <CardTitle className="text-base text-cyan-100">Add liquidity</CardTitle>
             <CardDescription className="text-cyan-200/55">
-              <code className="rounded bg-black/40 px-1.5 py-0.5 text-fuchsia-300/90">addLiquidity(usdcIn, eurcIn, minLpOut)</code>{" "}
-              — both sides in one tx (6 decimals).
+              Step 1: approve each token. Step 2: add liquidity (simulation runs first for a clearer revert reason).
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -400,6 +524,10 @@ export default function LiquidityPage() {
                   placeholder="10"
                   className={inputNeon}
                 />
+                <p className="text-[10px] uppercase tracking-wide text-cyan-300/60">
+                  Allowance: {allowUStr}{" "}
+                  {usdcSufficient ? "· ok" : address && parsedDeposit && parsedDeposit.usdcIn > B0 ? "· need approve" : ""}
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="liq-eurc" className="text-cyan-200/80">
@@ -415,14 +543,43 @@ export default function LiquidityPage() {
                   placeholder="10"
                   className={inputNeon}
                 />
+                <p className="text-[10px] uppercase tracking-wide text-cyan-300/60">
+                  Allowance: {allowEStr}{" "}
+                  {eurcSufficient ? "· ok" : address && parsedDeposit && parsedDeposit.eurcIn > B0 ? "· need approve" : ""}
+                </p>
               </div>
             </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!isConnected || busy !== null || !tokenUsdc || !vault}
+                onClick={() => void approveToken(tokenUsdc!, "USDC", "approve-usdc").catch(() => {})}
+              >
+                {busy === "approve-usdc" ? "…" : "Approve USDC"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!isConnected || busy !== null || !tokenEurc || !vault}
+                onClick={() => void approveToken(tokenEurc!, "EURC", "approve-eurc").catch(() => {})}
+              >
+                {busy === "approve-eurc" ? "…" : "Approve EURC"}
+              </Button>
+            </div>
+
             <Button
               type="button"
               variant="default"
-              disabled={!isConnected || busy !== null}
+              disabled={!canAddLiquidity || busy !== null}
               onClick={onDeposit}
               className="w-full sm:w-auto"
+              title={
+                !canAddLiquidity && isConnected
+                  ? "Approve both tokens for at least the amounts above, then try again."
+                  : undefined
+              }
             >
               {busy === "deposit" ? "…" : "Add liquidity"}
             </Button>
@@ -447,12 +604,7 @@ export default function LiquidityPage() {
                 className={inputNeon}
               />
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!isConnected || busy !== null}
-              onClick={onWithdraw}
-            >
+            <Button type="button" variant="outline" disabled={!isConnected || busy !== null} onClick={onWithdraw}>
               {busy === "withdraw" ? "…" : "Remove"}
             </Button>
           </CardContent>
@@ -480,20 +632,25 @@ export default function LiquidityPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="default" disabled={!isConnected || busy !== null} onClick={onSaveMicro}>
-                Save opt-in
+                {busy === "micro" ? "…" : "Save opt-in"}
               </Button>
               <Button type="button" variant="outline" disabled={!isConnected || busy !== null} onClick={onMicroOff}>
                 Opt out
               </Button>
-              <Button type="button" variant="outline" disabled={!isConnected || busy !== null || !vault} onClick={onApproveMicroPulls}>
-                Approve tokens
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!isConnected || busy !== null || !vault}
+                onClick={onApproveMicroPulls}
+              >
+                Approve both (micro)
               </Button>
             </div>
           </CardContent>
         </Card>
 
         {msg && (
-          <p className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 px-3 py-2 font-mono text-sm text-cyan-100/90">
+          <p className="whitespace-pre-wrap break-words rounded-lg border border-cyan-500/30 bg-cyan-500/5 px-3 py-2 font-mono text-sm text-cyan-100/90">
             {msg}
           </p>
         )}
