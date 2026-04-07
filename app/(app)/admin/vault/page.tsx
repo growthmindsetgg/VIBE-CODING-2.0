@@ -8,10 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { formatUnits, isAddress } from "viem";
 import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
-import { MissingStableVaultConfig } from "@/components/stable-vault/missing-config";
-import { NonDeployerPoolMessage } from "@/components/stable-vault/non-deployer-pool-message";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
-import { isPoolConfigDeployer, poolConfigDeployerAddress } from "@/lib/contracts/pool-deployer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,13 +23,7 @@ export default function AdminVaultPage() {
   const config = useConfig();
   const { address, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
-  const {
-    vault,
-    ready,
-    saveBrowserOverrides,
-    clearBrowserOverrides,
-    storedSnapshot,
-  } = useStableVaultAddresses();
+  const { vault } = useStableVaultAddresses();
 
   const [unlocked, setUnlocked] = useState(false);
   const [pw, setPw] = useState("");
@@ -208,70 +199,56 @@ export default function AdminVaultPage() {
         </Button>
       </div>
 
-      {!ready ? (
-        canEditPoolConfig ? (
-          <MissingStableVaultConfig
-            saveBrowserOverrides={saveBrowserOverrides}
-            clearBrowserOverrides={clearBrowserOverrides}
-            storedSnapshot={storedSnapshot}
-          />
-        ) : (
-          <NonDeployerPoolMessage />
-        )
-      ) : (
-        <>
-          <Card variant="brutal" className="border-[#9146ff]/30">
-            <CardHeader>
-              <CardTitle variant="brutal" className="text-base">
-                Pool status
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 font-mono text-xs text-zinc-700">
-              <p className="break-all">Vault: {vault}</p>
-              <p>Owner: {owner ? String(owner) : "…"}</p>
-              <p>
-                USDC: {reserveUsdc !== undefined ? formatUnits(reserveUsdc as bigint, STABLE_TOKEN_DECIMALS) : "—"} ·
-                EURC: {reserveEurc !== undefined ? formatUnits(reserveEurc as bigint, STABLE_TOKEN_DECIMALS) : "—"}
-              </p>
-              <p>Total LP: {totalLp !== undefined ? formatUnits(totalLp as bigint, STABLE_TOKEN_DECIMALS) : "—"}</p>
-              <p>
-                EURC/USD 1e18:{" "}
-                {usdPerEurc !== undefined ? formatUnits(usdPerEurc as bigint, 18) : "—"}
-              </p>
-            </CardContent>
-          </Card>
+      <Card variant="brutal" className="border-[#9146ff]/30">
+        <CardHeader>
+          <CardTitle variant="brutal" className="text-base">
+            Pool status
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 font-mono text-xs text-zinc-700">
+          <p className="break-all">Vault: {vault}</p>
+          <p>Owner: {owner ? String(owner) : "…"}</p>
+          <p>
+            USDC: {reserveUsdc !== undefined ? formatUnits(reserveUsdc as bigint, STABLE_TOKEN_DECIMALS) : "—"} ·
+            EURC: {reserveEurc !== undefined ? formatUnits(reserveEurc as bigint, STABLE_TOKEN_DECIMALS) : "—"}
+          </p>
+          <p>Total LP: {totalLp !== undefined ? formatUnits(totalLp as bigint, STABLE_TOKEN_DECIMALS) : "—"}</p>
+          <p>
+            EURC/USD 1e18:{" "}
+            {usdPerEurc !== undefined ? formatUnits(usdPerEurc as bigint, 18) : "—"}
+          </p>
+        </CardContent>
+      </Card>
 
-          <Card variant="brutal">
-            <CardHeader>
-              <CardTitle variant="brutal" className="text-base">
-                On-chain actions
-              </CardTitle>
-              <CardDescription variant="brutal">
-                Transactions must be sent from the <strong>contract owner</strong> wallet. Connected:{" "}
-                {isConnected ? address : "—"} · Owner match: {isContractOwner ? "yes" : "no"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Button type="button" disabled={!isConnected || !isContractOwner || busy !== null} onClick={onNudge}>
-                {busy === "nudge" ? "…" : "nudgePool()"}
-              </Button>
-              <div className="space-y-2 border-t border-black/10 pt-4">
-                <Label htmlFor="ku">User address (micro-pull + nudge)</Label>
-                <Input id="ku" value={keeperUser} onChange={(e) => setKeeperUser(e.target.value)} placeholder="0x…" />
-                <Button
-                  type="button"
-                  disabled={!isConnected || !isContractOwner || busy !== null}
-                  onClick={onMicroPull}
-                >
-                  {busy === "micro" ? "…" : "microPullAndNudge(user)"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+      <Card variant="brutal">
+        <CardHeader>
+          <CardTitle variant="brutal" className="text-base">
+            On-chain actions
+          </CardTitle>
+          <CardDescription variant="brutal">
+            Transactions must be sent from the <strong>contract owner</strong> wallet. Connected:{" "}
+            {isConnected ? address : "—"} · Owner match: {isContractOwner ? "yes" : "no"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button type="button" disabled={!isConnected || !isContractOwner || busy !== null} onClick={onNudge}>
+            {busy === "nudge" ? "…" : "nudgePool()"}
+          </Button>
+          <div className="space-y-2 border-t border-black/10 pt-4">
+            <Label htmlFor="ku">User address (micro-pull + nudge)</Label>
+            <Input id="ku" value={keeperUser} onChange={(e) => setKeeperUser(e.target.value)} placeholder="0x…" />
+            <Button
+              type="button"
+              disabled={!isConnected || !isContractOwner || busy !== null}
+              onClick={onMicroPull}
+            >
+              {busy === "micro" ? "…" : "microPullAndNudge(user)"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-          {msg && <p className="text-sm font-medium text-zinc-800">{msg}</p>}
-        </>
-      )}
+      {msg && <p className="text-sm font-medium text-zinc-800">{msg}</p>}
     </div>
   );
 }

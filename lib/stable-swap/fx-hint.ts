@@ -16,7 +16,7 @@ export function refEurcPerUsdc(): number {
 
 /** Marginal pool price (EURC per USDC), ignoring fee — rE/rU. */
 export function poolSpotEurcPerUsdc(reserveUsdc: bigint, reserveEurc: bigint): number | null {
-  if (reserveUsdc <= 0n) return null;
+  if (reserveUsdc <= BigInt(0)) return null;
   return Number(reserveEurc) / Number(reserveUsdc);
 }
 
@@ -36,8 +36,8 @@ export function skewVsReferencePercent(
  * ignoring fees/curve curvature — educational only.
  */
 export function roughEurcShortfallForPeg(reserveUsdc: bigint, reserveEurc: bigint, refEurcPerUsdc_: number): bigint {
-  if (reserveUsdc <= 0n || refEurcPerUsdc_ <= 0) return 0n;
+  if (reserveUsdc <= BigInt(0) || refEurcPerUsdc_ <= 0) return BigInt(0);
   const targetE = BigInt(Math.ceil(Number(reserveUsdc) * refEurcPerUsdc_));
   const short = targetE - reserveEurc;
-  return short > 0n ? short : 0n;
+  return short > BigInt(0) ? short : BigInt(0);
 }

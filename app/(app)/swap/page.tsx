@@ -17,7 +17,6 @@ import { arcTestnet } from "@/lib/chains/arc";
 import { ARC_TESTNET_EURC, ARC_TESTNET_USDC } from "@/lib/contracts/addresses";
 import { B0, STABLE_TOKEN_DECIMALS, STABLE_VAULT_CHAIN_ID } from "@/lib/stable-vault/constants";
 import {
-  fxHintUsdPerEurc,
   poolSpotEurcPerUsdc,
   refEurcPerUsdc,
   roughEurcShortfallForPeg,
@@ -47,7 +46,7 @@ export default function SwapPage() {
   const config = useConfig();
   const { address, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
-  const { vault, usdc: hookUsdc, eurc: hookEurc, reloadStored } = useStableVaultAddresses();
+  const { vault, usdc: hookUsdc, eurc: hookEurc } = useStableVaultAddresses();
   const usdcAddr = hookUsdc ?? ARC_TESTNET_USDC;
   const eurcAddr = hookEurc ?? ARC_TESTNET_EURC;
 
@@ -188,7 +187,6 @@ export default function SwapPage() {
     isConnected && transferDestination !== undefined && parsedIn > B0 && payToken,
   );
 
-  const fxUsdPerEurcHint = fxHintUsdPerEurc();
   const refEurcPerUsdcHint = refEurcPerUsdc();
   const poolSpotEurcPerUsdc_ = ammReady && rU > B0 ? poolSpotEurcPerUsdc(rU, rE) : null;
   const fxSkewPct = ammReady ? skewVsReferencePercent(rU, rE, refEurcPerUsdcHint) : null;
@@ -216,7 +214,6 @@ export default function SwapPage() {
       refetchLp(),
       refetchAllowance(),
     ]);
-    reloadStored();
   }
 
   async function copyAddress() {
