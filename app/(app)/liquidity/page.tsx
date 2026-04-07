@@ -3,25 +3,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { toast } from "sonner";
-import { erc20Abi, formatUnits, maxUint256, parseUnits, zeroAddress } from "viem";
+import { createPublicClient, erc20Abi, formatUnits, http, maxUint256, parseUnits, zeroAddress } from "viem";
 import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
-import { getPublicClient, waitForTransactionReceipt } from "wagmi/actions";
+import { waitForTransactionReceipt } from "wagmi/actions";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
+import {
+  stableSwapMicroVaultAbi,
+  stableSwapMicroVaultAddLiquiditySimAbi,
+} from "@/lib/abis/stable-swap-micro-vault";
 import { arcTestnet } from "@/lib/chains/arc";
+import { formatAllowanceHuman } from "@/lib/format-allowance";
 import { formatOnchainError } from "@/lib/format-onchain-error";
 import { requireTxSuccess } from "@/lib/require-tx-success";
 import { B0, STABLE_TOKEN_DECIMALS, STABLE_VAULT_CHAIN_ID } from "@/lib/stable-vault/constants";
 
 /**
- * StableSwapMicroVault uses `addLiquidity(usdcIn, eurcIn, minLpOut)` — LP mints to msg.sender (no `to` param).
- * USDC/EURC on Arc for this pool: 6 decimals (fixed; do not trust broken decimals() RPC).
+ * StableSwapMicroVault: `addLiquidity(uint256 usdIn, uint256 eurIn, uint256 minLpOut)` — USDC = usdIn, EURC = eurIn.
+ * LP mints to msg.sender. Six decimals for both tokens.
  */
 const STABLE_PAIR_DECIMALS = STABLE_TOKEN_DECIMALS;
+
+const ARC_RPC =
+  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_ARC_RPC_URL) ||
+  arcTestnet.rpcUrls.default.http[0];
 
 function normalizeAmountInput(raw: string) {
   return raw.trim().replace(/,/g, ".");
@@ -51,6 +59,15 @@ export default function LiquidityPage() {
   }, [depU, depE]);
 
   const explorerBase = arcTestnet.blockExplorers.default.url;
+
+  const arcSimClient = useMemo(
+    () =>
+      createPublicClient({
+        chain: arcTestnet,
+        transport: http(ARC_RPC),
+      }),
+    [],
+  );
 
   const { data: reserveUsdc, refetch: refetchReserves } = useReadContract({
     address: vault,
@@ -155,9 +172,9 @@ export default function LiquidityPage() {
     try {
       const u = normalizeAmountInput(depU);
       const e = normalizeAmountInput(depE);
-      const usdcIn = parseUnits(u || "0", STABLE_PAIR_DECIMALS);
-      const eurcIn = parseUnits(e || "0", STABLE_PAIR_DECIMALS);
-      return { usdcIn, eurcIn, usdcStr: u, eurcStr: e };
+      const usdIn = parseUnits(u || "0", STABLE_PAIR_DECIMALS);
+      const eurIn = parseUnits(e || "0", STABLE_PAIR_DECIMALS);
+      return { usdIn, eurIn, usdcStr: u, eurcStr: e };
     } catch {
       return null;
     }
@@ -167,26 +184,26 @@ export default function LiquidityPage() {
     Boolean(
       address &&
         parsedDeposit &&
-        parsedDeposit.usdcIn > B0 &&
+        parsedDeposit.usdIn > B0 &&
         allowanceUsdc !== undefined &&
-        allowanceUsdc >= parsedDeposit.usdcIn,
+        allowanceUsdc >= parsedDeposit.usdIn,
     );
 
   const eurcSufficient =
     Boolean(
       address &&
         parsedDeposit &&
-        parsedDeposit.eurcIn > B0 &&
+        parsedDeposit.eurIn > B0 &&
         allowanceEurc !== undefined &&
-        allowanceEurc >= parsedDeposit.eurcIn,
+        allowanceEurc >= parsedDeposit.eurIn,
     );
 
   const canAddLiquidity =
     isConnected &&
     Boolean(address && vault && tokenUsdc && tokenEurc) &&
     parsedDeposit !== null &&
-    parsedDeposit.usdcIn > B0 &&
-    parsedDeposit.eurcIn > B0 &&
+    parsedDeposit.usdIn > B0 &&
+    parsedDeposit.eurIn > B0 &&
     usdcSufficient &&
     eurcSufficient;
 
@@ -242,57 +259,54 @@ export default function LiquidityPage() {
     const eurcStr = normalizeAmountInput(depERef.current);
 
     try {
-      const usdcIn = parseUnits(usdcStr || "0", STABLE_PAIR_DECIMALS);
-      const eurcIn = parseUnits(eurcStr || "0", STABLE_PAIR_DECIMALS);
+      const usdIn = parseUnits(usdcStr || "0", STABLE_PAIR_DECIMALS);
+      const eurIn = parseUnits(eurcStr || "0", STABLE_PAIR_DECIMALS);
+      const minLpOut = B0;
 
-      console.log("[addLiquidity] addresses + amounts", {
+      console.log("[addLiquidity] simulate → write", {
         vault,
         tokenUsdc,
         tokenEurc,
         user: address,
-        usdcHuman: usdcStr,
-        eurcHuman: eurcStr,
+        usdHuman: usdcStr,
+        eurHuman: eurcStr,
         decimals: STABLE_PAIR_DECIMALS,
-        usdcIn: usdcIn.toString(),
-        eurcIn: eurcIn.toString(),
-        minLpOut: "0",
-        note: "StableSwapMicroVault: addLiquidity(usdcIn,eurcIn,minLpOut); LP → msg.sender",
+        usdInWei: usdIn.toString(),
+        eurInWei: eurIn.toString(),
+        minLpOut: minLpOut.toString(),
+        simAbi: "stableSwapMicroVaultAddLiquiditySimAbi (no returns — avoids Arc returndata bug)",
       });
 
-      if (usdcIn <= B0 || eurcIn <= B0) {
+      if (usdIn <= B0 || eurIn <= B0) {
         throw new Error("Enter both USDC and EURC amounts (greater than zero).");
       }
 
       const allowU = allowanceUsdc ?? B0;
       const allowE = allowanceEurc ?? B0;
-      if (allowU < usdcIn) {
+      if (allowU < usdIn) {
         throw new Error(
-          `USDC allowance too low (${formatUnits(allowU, STABLE_PAIR_DECIMALS)}). Click “Approve USDC” first.`,
+          `USDC allowance too low (${formatAllowanceHuman(allowU, STABLE_PAIR_DECIMALS)}). Click “Approve USDC” first.`,
         );
       }
-      if (allowE < eurcIn) {
+      if (allowE < eurIn) {
         throw new Error(
-          `EURC allowance too low (${formatUnits(allowE, STABLE_PAIR_DECIMALS)}). Click “Approve EURC” first.`,
+          `EURC allowance too low (${formatAllowanceHuman(allowE, STABLE_PAIR_DECIMALS)}). Click “Approve EURC” first.`,
         );
       }
 
-      const minLpOut = B0;
-      const publicClient = getPublicClient(config, { chainId: STABLE_VAULT_CHAIN_ID });
-      if (!publicClient) {
-        throw new Error("No public client for Arc testnet — switch network and retry.");
-      }
       try {
-        await publicClient.simulateContract({
+        await arcSimClient.simulateContract({
           account: address,
           address: vault,
-          abi: stableSwapMicroVaultAbi,
+          abi: stableSwapMicroVaultAddLiquiditySimAbi,
           functionName: "addLiquidity",
-          args: [usdcIn, eurcIn, minLpOut],
+          args: [usdIn, eurIn, minLpOut],
         });
+        console.log("[addLiquidity] simulation OK (write-only ABI, no returndata required)");
       } catch (simErr) {
         const reason = formatOnchainError(simErr);
         console.error("[addLiquidity] simulation failed", simErr);
-        throw new Error(`Simulation failed: ${reason}`);
+        throw new Error(`Add liquidity simulation: ${reason}`);
       }
 
       const hash = await writeContractAsync({
@@ -300,7 +314,7 @@ export default function LiquidityPage() {
         address: vault,
         abi: stableSwapMicroVaultAbi,
         functionName: "addLiquidity",
-        args: [usdcIn, eurcIn, minLpOut],
+        args: [usdIn, eurIn, minLpOut],
       });
 
       const depReceipt = await waitForTransactionReceipt(config, { hash });
@@ -447,13 +461,13 @@ export default function LiquidityPage() {
     "border-cyan-500/40 bg-[#06060d] text-cyan-50 shadow-[0_0_20px_rgba(0,240,255,0.08)] placeholder:text-zinc-600 focus-visible:border-fuchsia-400 focus-visible:ring-fuchsia-500/50 focus-visible:ring-offset-[#050508]";
 
   const allowUStr =
-    allowanceUsdc === undefined || !address
-      ? "…"
-      : formatUnits(allowanceUsdc as bigint, STABLE_PAIR_DECIMALS);
+    !address ? "—" : formatAllowanceHuman(allowanceUsdc as bigint | undefined, STABLE_PAIR_DECIMALS);
   const allowEStr =
-    allowanceEurc === undefined || !address
-      ? "…"
-      : formatUnits(allowanceEurc as bigint, STABLE_PAIR_DECIMALS);
+    !address ? "—" : formatAllowanceHuman(allowanceEurc as bigint | undefined, STABLE_PAIR_DECIMALS);
+  const allowURaw =
+    address && allowanceUsdc !== undefined ? (allowanceUsdc as bigint).toString() : null;
+  const allowERaw =
+    address && allowanceEurc !== undefined ? (allowanceEurc as bigint).toString() : null;
 
   return (
     <div className="mx-auto max-w-lg">
@@ -470,7 +484,7 @@ export default function LiquidityPage() {
             <code className="break-all text-fuchsia-300/90">{vault}</code>
           </p>
           <p className="mt-1 text-xs text-cyan-200/50">
-            On-chain: <code className="text-emerald-300/80">addLiquidity(usdcIn, eurcIn, minLpOut)</code> with{" "}
+            On-chain: <code className="text-emerald-300/80">addLiquidity(usdIn, eurIn, minLpOut)</code> with{" "}
             <code className="text-emerald-300/80">minLpOut = 0</code> (no LP slippage floor). LP mints to your wallet (
             <code className="text-emerald-300/80">msg.sender</code>) — there is no <code>to</code> argument on this
             contract.
@@ -525,8 +539,11 @@ export default function LiquidityPage() {
                   className={inputNeon}
                 />
                 <p className="text-[10px] uppercase tracking-wide text-cyan-300/60">
-                  Allowance: {allowUStr}{" "}
-                  {usdcSufficient ? "· ok" : address && parsedDeposit && parsedDeposit.usdcIn > B0 ? "· need approve" : ""}
+                  Allowance: <span className="text-cyan-200">{allowUStr}</span>
+                  {allowURaw && allowUStr !== "Infinite (∞)" ? (
+                    <span className="ml-1 font-mono text-[9px] text-zinc-500 normal-case">({allowURaw} wei)</span>
+                  ) : null}{" "}
+                  {usdcSufficient ? "· ok" : address && parsedDeposit && parsedDeposit.usdIn > B0 ? "· need approve" : ""}
                 </p>
               </div>
               <div className="space-y-1.5">
@@ -544,8 +561,11 @@ export default function LiquidityPage() {
                   className={inputNeon}
                 />
                 <p className="text-[10px] uppercase tracking-wide text-cyan-300/60">
-                  Allowance: {allowEStr}{" "}
-                  {eurcSufficient ? "· ok" : address && parsedDeposit && parsedDeposit.eurcIn > B0 ? "· need approve" : ""}
+                  Allowance: <span className="text-cyan-200">{allowEStr}</span>
+                  {allowERaw && allowEStr !== "Infinite (∞)" ? (
+                    <span className="ml-1 font-mono text-[9px] text-zinc-500 normal-case">({allowERaw} wei)</span>
+                  ) : null}{" "}
+                  {eurcSufficient ? "· ok" : address && parsedDeposit && parsedDeposit.eurIn > B0 ? "· need approve" : ""}
                 </p>
               </div>
             </div>
