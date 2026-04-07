@@ -8,7 +8,7 @@ export const ARC_TESTNET_EURC = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a" as 
 
 /** Default StableSwapMicroVault on Arc testnet (overridden by NEXT_PUBLIC_STABLE_VAULT_ADDRESS). */
 export const ARC_TESTNET_STABLE_VAULT = getAddress(
-  "0x6a6652cc5e37401095f965f6440a9b3f074cfb36",
+  "0xcb8dd43d44c48925c7348a177229dff11fd1ec27",
 ) as `0x${string}`;
 
 export function usdcAddress(): `0x${string}` {
