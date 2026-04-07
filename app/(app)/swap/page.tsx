@@ -16,6 +16,13 @@ import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
 import { arcTestnet } from "@/lib/chains/arc";
 import { ARC_TESTNET_EURC, ARC_TESTNET_USDC } from "@/lib/contracts/addresses";
 import { B0, STABLE_TOKEN_DECIMALS, STABLE_VAULT_CHAIN_ID } from "@/lib/stable-vault/constants";
+import {
+  fxHintUsdPerEurc,
+  poolSpotEurcPerUsdc,
+  refEurcPerUsdc,
+  roughEurcShortfallForPeg,
+  skewVsReferencePercent,
+} from "@/lib/stable-swap/fx-hint";
 import { quoteEurcToUsdc, quoteUsdcToEurc } from "@/lib/stable-swap/quote";
 import { cn } from "@/lib/utils";
 
@@ -180,6 +187,12 @@ export default function SwapPage() {
   const canTransfer = Boolean(
     isConnected && transferDestination !== undefined && parsedIn > B0 && payToken,
   );
+
+  const fxUsdPerEurcHint = fxHintUsdPerEurc();
+  const refEurcPerUsdcHint = refEurcPerUsdc();
+  const poolSpotEurcPerUsdc_ = ammReady && rU > B0 ? poolSpotEurcPerUsdc(rU, rE) : null;
+  const fxSkewPct = ammReady ? skewVsReferencePercent(rU, rE, refEurcPerUsdcHint) : null;
+  const eurcShortfallHint = ammReady ? roughEurcShortfallForPeg(rU, rE, refEurcPerUsdcHint) : B0;
 
   function flip() {
     setPaySide((s) => (s === "USDC" ? "EURC" : "USDC"));
@@ -404,6 +417,57 @@ export default function SwapPage() {
         <div className="rounded-full border-[2px] border-black bg-cyan-100 px-4 py-2 text-center font-mono text-[10px] font-bold uppercase tracking-wide text-zinc-800 shadow-[3px_3px_0_0_#000]">
           Pool connected — 0.05% fee — slippage applies
         </div>
+      )}
+
+      {ammReady && (
+        <Card variant="brutal" className="border-sky-700/40 bg-sky-50/95">
+          <CardContent className="space-y-3 pt-6 text-sm leading-relaxed text-zinc-800">
+            <p className="font-[family-name:var(--font-display)] text-base font-bold text-black">
+              Why isn&apos;t this ~0.92 EURC per USDC?
+            </p>
+            <p className="text-xs">
+              This vault uses a <strong>constant-product AMM</strong> (like Uniswap v2): your execution price comes only
+              from <strong>reserveUSDC</strong> and <strong>reserveEURC</strong>. The deploy-time{" "}
+              <span className="font-mono text-[11px]">usdPerEurc1e18</span> is used for the owner <strong>nudge</strong>{" "}
+              toward equal <em>USD</em> weight — it does <strong>not</strong> rewrite swap quotes.
+            </p>
+            <p className="text-xs">
+              A <strong>market oracle</strong> (Chainlink, Pyth, DEX TWAP, etc.) is only useful if you build pricing
+              around it — e.g. oracle-stabilized stableswap, limit orders, or capped deviation. That is a{" "}
+              <strong>different contract</strong> than this micro vault.
+            </p>
+            <ul className="list-inside list-disc space-y-1.5 border-t-[2px] border-black/10 pt-3 font-mono text-[11px] text-zinc-700">
+              <li>
+                UI reference (set <span className="font-mono">NEXT_PUBLIC_FX_HINT_USD_PER_EUR</span>, default 1.08): ~
+                {refEurcPerUsdcHint.toFixed(4)} EURC per 1 USDC
+              </li>
+              <li>
+                Pool marginal spot:{" "}
+                {poolSpotEurcPerUsdc_ !== null ? `${poolSpotEurcPerUsdc_.toFixed(6)} EURC per USDC` : "—"}
+              </li>
+              {fxSkewPct !== null && fxSkewPct > 0.5 && (
+                <li className="font-sans text-amber-900">
+                  Pool implied rate is ~{fxSkewPct.toFixed(1)}% away from that hint — reserves are skewed (e.g. lots of
+                  USDC, little EURC), so small trades still show high impact.
+                </li>
+              )}
+              {eurcShortfallHint > B0 && (
+                <li>
+                  Order-of-magnitude EURC to move marginal spot toward the hint (add via Pool, then recheck): ~
+                  {formatUnits(eurcShortfallHint, STABLE_TOKEN_DECIMALS)} EURC vs current{" "}
+                  {formatUnits(rE, STABLE_TOKEN_DECIMALS)} EURC / {formatUnits(rU, STABLE_TOKEN_DECIMALS)} USDC
+                </li>
+              )}
+            </ul>
+            <p className="text-xs text-zinc-600">
+              <strong>Larger liquidity</strong> reduces slippage for a given size, but the <strong>ratio</strong> of the
+              two reserves sets the price. Seed near <strong>equal USD value</strong> on both sides at your target FX.
+            </p>
+            <Button asChild variant="brutalOutline" size="sm" className="font-mono text-[10px] uppercase">
+              <Link href="/liquidity">Add / rebalance liquidity</Link>
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
       <Card variant="brutal">
