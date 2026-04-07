@@ -8,11 +8,16 @@ import { erc20Abi, formatUnits, isAddress, maxUint256, parseUnits, zeroAddress }
 import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
 import { arcTestnet } from "@/lib/chains/arc";
 import { ARC_TESTNET_EURC, ARC_TESTNET_USDC } from "@/lib/contracts/addresses";
 import { B0, STABLE_TOKEN_DECIMALS, STABLE_VAULT_CHAIN_ID } from "@/lib/stable-vault/constants";
 import { quoteEurcToUsdc, quoteUsdcToEurc } from "@/lib/stable-swap/quote";
+import { cn } from "@/lib/utils";
 
 type PaySide = "USDC" | "EURC";
 
@@ -23,6 +28,9 @@ const SLIPPAGE_OPTIONS = [
   { label: "1%", bps: 100 },
   { label: "3%", bps: 300 },
 ] as const;
+
+const innerBrutal =
+  "rounded-xl border-[3px] border-black bg-white p-4 shadow-[4px_4px_0_0_#000] text-zinc-900";
 
 function shortAddr(a: `0x${string}`) {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -38,7 +46,6 @@ export default function SwapPage() {
 
   const [paySide, setPaySide] = useState<PaySide>("USDC");
   const [amountIn, setAmountIn] = useState("");
-  /** When false, transfer destination is the connected wallet. When true, use `recipient` field. */
   const [customRecipient, setCustomRecipient] = useState(false);
   const [recipient, setRecipient] = useState("");
   const [slippageBps, setSlippageBps] = useState<number>(100);
@@ -126,7 +133,6 @@ export default function SwapPage() {
       : quoteEurcToUsdc(rU, rE, parsedIn);
   }, [canQuoteAmm, rU, rE, parsedIn, paySide]);
 
-  /** Spot output ignoring pool fee — for price impact vs executed quote. */
   const idealOut = useMemo(() => {
     if (!vault || rU <= B0 || rE <= B0 || parsedIn <= B0) return B0;
     return paySide === "USDC" ? (parsedIn * rE) / rU : (parsedIn * rU) / rE;
@@ -138,7 +144,7 @@ export default function SwapPage() {
     return Math.min(99_99, Math.max(0, bps));
   }, [ammReady, idealOut, quoteOut]);
 
-  const estOut = ammReady ? quoteOut : parsedIn;
+  const estOut = ammReady ? quoteOut : B0;
 
   const minOut = useMemo(() => {
     if (quoteOut <= B0) return B0;
@@ -255,7 +261,7 @@ export default function SwapPage() {
             href={`${explorerBase}/tx/${hash}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-emerald-300 underline"
+            className="inline-flex items-center gap-1 text-[#5c16c5] underline"
           >
             View on ArcScan <ExternalLink className="size-3" />
           </a>
@@ -291,7 +297,7 @@ export default function SwapPage() {
             href={`${explorerBase}/tx/${hash}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-emerald-300 underline"
+            className="inline-flex items-center gap-1 text-[#5c16c5] underline"
           >
             View on ArcScan <ExternalLink className="size-3" />
           </a>
@@ -307,131 +313,116 @@ export default function SwapPage() {
   }
 
   return (
-    <div className="relative mx-auto max-w-md pb-16">
-      <div
-        className="pointer-events-none absolute inset-0 -z-10 opacity-40 blur-3xl"
-        aria-hidden
-        style={{
-          background:
-            "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,240,255,0.25), transparent 50%), radial-gradient(ellipse 60% 40% at 100% 50%, rgba(255,43,214,0.12), transparent 45%)",
-        }}
-      />
-
-      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
+    <div className="mx-auto max-w-lg space-y-6 pb-16">
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-400/90">
-            VibeFunds · Swap
-          </p>
-          <h1 className="mt-2 bg-gradient-to-r from-fuchsia-400 via-cyan-300 to-emerald-300 bg-clip-text font-[family-name:var(--font-display)] text-4xl font-bold uppercase tracking-tight text-transparent">
+          <p className="font-mono text-xs font-bold uppercase tracking-widest text-[#5c16c5]">Vibefunds / Swap</p>
+          <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl font-bold uppercase tracking-tight text-black">
             Swap
           </h1>
-          <p className="mt-2 text-sm text-zinc-500">
-            Arc testnet ·{" "}
-            <span className="font-mono text-cyan-600/90">{ARC_TESTNET_USDC.slice(0, 10)}…</span> ·{" "}
-            <span className="font-mono text-fuchsia-600/90">{ARC_TESTNET_EURC.slice(0, 10)}…</span>
+          <p className="mt-2 font-mono text-xs text-zinc-600">
+            Arc testnet · {ARC_TESTNET_USDC.slice(0, 10)}… · {ARC_TESTNET_EURC.slice(0, 10)}…
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => refreshAll()}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-[#050510] px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-wider text-cyan-300 shadow-[0_0_20px_rgba(0,240,255,0.15)] transition-colors hover:border-cyan-400/70 hover:text-cyan-100"
-        >
+        <Button type="button" variant="brutalOutline" size="sm" onClick={() => refreshAll()} className="font-mono text-xs uppercase">
           <RefreshCw className="size-3.5" aria-hidden />
           Refresh
-        </button>
+        </Button>
       </header>
 
       {isConnected && address ? (
-        <div className="mb-6 rounded-2xl border border-cyan-500/35 bg-[#050510] p-4 shadow-[0_0_40px_rgba(0,240,255,0.1)]">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-mono text-[9px] font-bold uppercase tracking-widest text-cyan-500/60">
-                Connected
-              </p>
-              <p className="mt-1 font-mono text-sm font-semibold text-cyan-100">{shortAddr(address)}</p>
+        <Card variant="brutal">
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <Label className="text-[10px] text-zinc-500">Connected</Label>
+                <p className="mt-1 font-mono text-sm font-bold text-black">{shortAddr(address)}</p>
+              </div>
+              <Button
+                type="button"
+                variant="brutalOutline"
+                size="sm"
+                onClick={copyAddress}
+                className="font-mono text-[10px] uppercase"
+              >
+                {copied ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
             </div>
-            <button
-              type="button"
-              onClick={copyAddress}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 font-mono text-[10px] font-bold uppercase text-cyan-200/80 hover:border-cyan-500/40 hover:text-cyan-100"
-            >
-              {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
-              {copied ? "Copied" : "Copy"}
-            </button>
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-3 border-t border-white/5 pt-4">
-            <div>
-              <p className="font-mono text-[9px] uppercase tracking-widest text-cyan-500/70">USDC</p>
-              <p className="mt-0.5 font-mono text-lg font-bold tabular-nums text-cyan-100">
-                {usdcBal !== undefined ? formatUnits(usdcBal as bigint, STABLE_TOKEN_DECIMALS) : "—"}
-              </p>
+            <div className="mt-4 grid grid-cols-2 gap-4 border-t-[3px] border-black pt-4">
+              <div>
+                <Label className="text-[10px]">USDC</Label>
+                <p className="mt-1 font-mono text-lg font-bold tabular-nums text-black">
+                  {usdcBal !== undefined ? formatUnits(usdcBal as bigint, STABLE_TOKEN_DECIMALS) : "—"}
+                </p>
+              </div>
+              <div>
+                <Label className="text-[10px]">EURC</Label>
+                <p className="mt-1 font-mono text-lg font-bold tabular-nums text-black">
+                  {eurcBal !== undefined ? formatUnits(eurcBal as bigint, STABLE_TOKEN_DECIMALS) : "—"}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="font-mono text-[9px] uppercase tracking-widest text-fuchsia-400/70">EURC</p>
-              <p className="mt-0.5 font-mono text-lg font-bold tabular-nums text-fuchsia-100">
-                {eurcBal !== undefined ? formatUnits(eurcBal as bigint, STABLE_TOKEN_DECIMALS) : "—"}
-              </p>
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="mb-6 rounded-2xl border border-zinc-700/50 bg-zinc-900/40 px-4 py-6 text-center">
-          <p className="font-mono text-sm text-zinc-400">Connect your wallet to swap (when pool is live)</p>
-          <p className="mt-1 text-xs text-zinc-600">Use the connect control in the header</p>
-        </div>
+        <Card variant="brutal" className="border-dashed border-zinc-400">
+          <CardContent className="py-8 text-center">
+            <p className="text-sm font-medium text-zinc-700">Connect your wallet to swap</p>
+            <p className="mt-1 text-xs text-zinc-500">Use the connect control in the header</p>
+          </CardContent>
+        </Card>
       )}
 
       {!ammReady && (
-        <div className="mb-4 rounded-xl border border-violet-500/35 bg-violet-500/10 px-4 py-3 text-xs leading-relaxed text-violet-100/95">
-          <strong className="text-violet-200">USDC → EURC is not a wallet transfer.</strong> Only the StableSwapMicroVault
-          can atomically trade one stable for the other (
-          <span className="font-mono text-[10px]">swapUsdcForEurc</span> /{" "}
-          <span className="font-mono text-[10px]">swapEurcForUsdc</span>
-          ).{" "}
-          {!vault ? (
-            <>
-              Set <span className="font-mono">NEXT_PUBLIC_STABLE_VAULT_ADDRESS</span> or paste the vault on the{" "}
-              <Link href="/liquidity" className="font-bold text-violet-200 underline underline-offset-2">
-                Pool
-              </Link>{" "}
-              page, then add liquidity.
-            </>
-          ) : (
-            <>
-              Vault is set but the pool has no tradable reserves yet —{" "}
-              <Link href="/liquidity" className="font-bold text-violet-200 underline underline-offset-2">
-                add USDC + EURC liquidity
-              </Link>{" "}
-              first, then swap here.
-            </>
-          )}
-        </div>
+        <Card variant="brutal" className="border-amber-600/60 bg-amber-50/90">
+          <CardContent className="pt-6 text-sm leading-relaxed text-zinc-800">
+            <strong className="text-black">USDC → EURC uses the vault pool.</strong> Only StableSwapMicroVault can trade
+            one stable for the other.{" "}
+            {!vault ? (
+              <>
+                Set <span className="font-mono text-xs">NEXT_PUBLIC_STABLE_VAULT_ADDRESS</span> or use the{" "}
+                <Link href="/liquidity" className="font-bold text-[#5c16c5] underline underline-offset-2">
+                  Pool
+                </Link>{" "}
+                page, then add liquidity.
+              </>
+            ) : (
+              <>
+                Vault is set —{" "}
+                <Link href="/liquidity" className="font-bold text-[#5c16c5] underline underline-offset-2">
+                  add USDC + EURC liquidity
+                </Link>{" "}
+                to enable swaps.
+              </>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {ammReady && (
-        <p className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 font-mono text-[10px] uppercase tracking-wide text-emerald-200/90">
-          Pool connected · 0.05% fee · slippage applies
-        </p>
+        <div className="rounded-full border-[2px] border-black bg-cyan-100 px-4 py-2 text-center font-mono text-[10px] font-bold uppercase tracking-wide text-zinc-800 shadow-[3px_3px_0_0_#000]">
+          Pool connected — 0.05% fee — slippage applies
+        </div>
       )}
 
-      <div className="rounded-[1.25rem] border border-cyan-500/30 bg-[#050510] p-1 shadow-[0_0_60px_rgba(0,240,255,0.12),inset_0_1px_0_rgba(255,255,255,0.06)]">
-        <div className="rounded-[1.1rem] border border-white/[0.06] bg-gradient-to-b from-white/[0.08] to-transparent p-5">
+      <Card variant="brutal">
+        <CardContent className="space-y-4 pt-6">
           {ammReady && (
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-cyan-400/80">
-                Slippage
-              </span>
-              <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Label className="text-[10px]">Slippage</Label>
+              <div className="flex flex-wrap gap-2">
                 {SLIPPAGE_OPTIONS.map((o) => (
                   <button
                     key={o.bps}
                     type="button"
                     onClick={() => setSlippageBps(o.bps)}
-                    className={`rounded-lg border px-2.5 py-1 font-mono text-[10px] font-bold uppercase ${
+                    className={cn(
+                      "rounded-lg border-[2px] border-black px-3 py-1.5 font-mono text-[10px] font-bold uppercase shadow-[2px_2px_0_0_#000] transition-transform",
                       slippageBps === o.bps
-                        ? "border-cyan-400 bg-cyan-500/25 text-cyan-100 shadow-[0_0_14px_rgba(0,240,255,0.35)]"
-                        : "border-white/10 text-cyan-100/45 hover:border-cyan-500/30"
-                    }`}
+                        ? "bg-[#9146FF] text-white"
+                        : "bg-white text-zinc-800 hover:-translate-x-px hover:-translate-y-px hover:shadow-[3px_3px_0_0_#000]",
+                    )}
                   >
                     {o.label}
                   </button>
@@ -440,48 +431,52 @@ export default function SwapPage() {
             </div>
           )}
 
-          <div className="rounded-xl border border-fuchsia-500/25 bg-black/50 p-4 backdrop-blur-sm">
+          <div className={innerBrutal}>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-cyan-100/55">You pay</span>
+              <span className="text-xs font-bold text-zinc-700">You pay</span>
               {payBal !== undefined && (
-                <span className="font-mono text-[10px] text-cyan-500/55">
+                <span className="font-mono text-[10px] font-bold text-zinc-500">
                   Balance {formatUnits(payBal as bigint, STABLE_TOKEN_DECIMALS)}
                 </span>
               )}
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2 sm:flex-nowrap">
-              <input
+            <div className="mt-3 flex flex-wrap items-stretch gap-2 sm:flex-nowrap">
+              <Input
                 value={amountIn}
                 onChange={(e) => setAmountIn(e.target.value)}
                 inputMode="decimal"
                 placeholder="0.0"
-                className="min-w-0 flex-1 border-none bg-transparent font-mono text-3xl font-bold tracking-tight text-white outline-none placeholder:text-white/15"
+                className="min-h-[52px] min-w-0 flex-1 border-[3px] font-mono text-2xl font-bold shadow-[4px_4px_0_0_#000]"
               />
-              <div className="flex shrink-0 gap-1.5">
-                <button
+              <div className="flex shrink-0 gap-2">
+                <Button
                   type="button"
+                  variant="brutalOutline"
+                  size="sm"
                   onClick={setMax}
                   disabled={!isConnected || payBal === undefined}
-                  className="rounded-lg border border-cyan-500/45 px-2.5 py-2 font-mono text-[10px] font-bold uppercase text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-30"
+                  className="h-[52px] font-mono text-[10px] uppercase"
                 >
                   Max
-                </button>
-                <div className="flex rounded-lg border border-white/12 bg-black/70 p-0.5">
+                </Button>
+                <div className="flex h-[52px] rounded-lg border-[3px] border-black bg-[#fafaf8] p-0.5 shadow-[4px_4px_0_0_#000]">
                   <button
                     type="button"
                     onClick={() => setPaySide("USDC")}
-                    className={`rounded-md px-3 py-2 font-mono text-[10px] font-bold uppercase transition-colors ${
-                      paySide === "USDC" ? "bg-cyan-500/30 text-cyan-100 shadow-[0_0_12px_rgba(0,240,255,0.2)]" : "text-white/35"
-                    }`}
+                    className={cn(
+                      "rounded-md px-3 font-mono text-[10px] font-bold uppercase transition-colors",
+                      paySide === "USDC" ? "bg-black text-white" : "text-zinc-500 hover:text-black",
+                    )}
                   >
                     USDC
                   </button>
                   <button
                     type="button"
                     onClick={() => setPaySide("EURC")}
-                    className={`rounded-md px-3 py-2 font-mono text-[10px] font-bold uppercase transition-colors ${
-                      paySide === "EURC" ? "bg-fuchsia-500/30 text-fuchsia-100 shadow-[0_0_12px_rgba(255,43,214,0.15)]" : "text-white/35"
-                    }`}
+                    className={cn(
+                      "rounded-md px-3 font-mono text-[10px] font-bold uppercase transition-colors",
+                      paySide === "EURC" ? "bg-black text-white" : "text-zinc-500 hover:text-black",
+                    )}
                   >
                     EURC
                   </button>
@@ -490,78 +485,82 @@ export default function SwapPage() {
             </div>
           </div>
 
-          <div className="flex justify-center py-3">
+          <div className="flex justify-center">
             <button
               type="button"
               onClick={flip}
-              className="rounded-full border border-cyan-400/55 bg-gradient-to-b from-zinc-900 to-black p-3 text-cyan-300 shadow-[0_0_28px_rgba(0,240,255,0.35)] transition-transform hover:scale-105 active:scale-95"
+              className="rounded-full border-[3px] border-black bg-white p-3 text-black shadow-[4px_4px_0_0_#000] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0_0_#000]"
               aria-label="Flip direction"
             >
               <ArrowDown className="size-5" />
             </button>
           </div>
 
-          <div className="rounded-xl border border-emerald-500/25 bg-black/50 p-4 backdrop-blur-sm">
-            <span className="text-xs font-medium text-emerald-100/55">You receive (est.)</span>
+          <div className={innerBrutal}>
+            <span className="text-xs font-bold text-zinc-700">You receive (est.)</span>
             <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
-              <p className="font-mono text-3xl font-bold tabular-nums text-white">
+              <p className="font-mono text-3xl font-bold tabular-nums text-black">
                 {ammReady && parsedIn > B0 && estOut > B0 ? formatUnits(estOut, STABLE_TOKEN_DECIMALS) : "—"}
               </p>
-              <span className="rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-wide text-emerald-200">
+              <span className="rounded-lg border-[2px] border-black bg-emerald-200 px-3 py-1.5 font-mono text-[10px] font-bold uppercase text-black shadow-[2px_2px_0_0_#000]">
                 {receiveSide}
               </span>
             </div>
             {!ammReady && (
-              <p className="mt-2 font-mono text-[10px] leading-relaxed text-amber-200/70">
-                Output stays empty until the vault pool has both USDC and EURC — then swaps mint the other token to your
-                wallet.
+              <p className="mt-2 text-xs leading-relaxed text-amber-900/90">
+                Output appears after the pool has both stables — then the vault mints the other token to your wallet.
               </p>
             )}
-            <div className="mt-3 space-y-1 font-mono text-[10px] leading-relaxed text-white/40">
+            <div className="mt-3 space-y-1 font-mono text-[10px] text-zinc-600">
               <p>
                 Price impact:{" "}
-                <span className="text-cyan-200/90">
+                <span className="font-bold text-black">
                   {ammReady && idealOut > B0 && quoteOut > B0
                     ? `${(priceImpactBps / 100).toFixed(2)}%`
                     : ammReady
                       ? "—"
-                      : "— (no pool)"}
+                      : "—"}
                 </span>
               </p>
               {ammReady && quoteOut > B0 && (
                 <p>
                   Min. out ({slippageBps / 100}% slip):{" "}
-                  <span className="text-emerald-200/80">{formatUnits(minOut, STABLE_TOKEN_DECIMALS)}</span> {receiveSide}
+                  <span className="font-bold text-black">{formatUnits(minOut, STABLE_TOKEN_DECIMALS)}</span>{" "}
+                  {receiveSide}
                 </p>
               )}
               {ammReady && (
-                <p className="text-white/30">
-                  Reserves USDC {formatUnits(rU, STABLE_TOKEN_DECIMALS)} · EURC {formatUnits(rE, STABLE_TOKEN_DECIMALS)}
+                <p>
+                  Reserves USDC {formatUnits(rU, STABLE_TOKEN_DECIMALS)} · EURC{" "}
+                  {formatUnits(rE, STABLE_TOKEN_DECIMALS)}
                 </p>
               )}
             </div>
           </div>
 
-          <div className="mt-5 space-y-2">
+          <div className="space-y-3 pt-2">
             {!isConnected ? (
-              <p className="py-3 text-center font-mono text-xs text-cyan-500/60">Connect wallet to continue</p>
+              <p className="py-2 text-center text-sm font-medium text-zinc-600">Connect wallet to continue</p>
             ) : ammReady ? (
               <>
                 {needApproval && parsedIn > B0 && (
-                  <button
+                  <Button
                     type="button"
+                    variant="brutalOutline"
+                    className="w-full font-mono text-sm uppercase"
                     disabled={busy !== null}
                     onClick={onApprove}
-                    className="w-full rounded-xl border border-fuchsia-500/50 bg-fuchsia-500/15 py-3.5 font-mono text-sm font-bold uppercase tracking-wide text-fuchsia-100 shadow-[0_0_24px_rgba(255,43,214,0.18)] hover:bg-fuchsia-500/25 disabled:opacity-40"
                   >
                     {busy === "approve" ? "Approving…" : `Approve ${paySide}`}
-                  </button>
+                  </Button>
                 )}
-                <button
+                <Button
                   type="button"
+                  variant="brutalPrimary"
+                  size="lg"
+                  className="w-full font-mono text-sm uppercase"
                   disabled={!canAmmSwap || busy !== null}
                   onClick={onSwap}
-                  className="w-full rounded-xl border border-cyan-400/60 bg-gradient-to-r from-cyan-500/35 via-fuchsia-500/25 to-emerald-500/30 py-4 font-mono text-sm font-bold uppercase tracking-wide text-white shadow-[0_0_40px_rgba(0,240,255,0.22)] disabled:cursor-not-allowed disabled:opacity-35"
                 >
                   {busy === "swap"
                     ? "Swapping…"
@@ -570,31 +569,32 @@ export default function SwapPage() {
                       : parsedIn <= B0
                         ? "Enter amount"
                         : `Swap ${paySide} for ${receiveSide}`}
-                </button>
+                </Button>
               </>
             ) : (
-              <div className="space-y-3">
-                <Link
-                  href="/liquidity"
-                  className="flex w-full items-center justify-center rounded-xl border border-emerald-400/50 bg-emerald-500/15 py-4 font-mono text-sm font-bold uppercase tracking-wide text-emerald-100 shadow-[0_0_28px_rgba(52,211,153,0.2)] transition-colors hover:bg-emerald-500/25"
+              <>
+                <Button
+                  asChild
+                  variant="brutalPrimary"
+                  size="lg"
+                  className="w-full font-mono text-sm uppercase"
                 >
-                  {vault ? "Add liquidity to enable swap" : "Open Pool — set vault & liquidity"}
-                </Link>
-                <details className="group rounded-xl border border-white/10 bg-black/50">
-                  <summary className="cursor-pointer list-none px-4 py-3 font-mono text-[10px] font-bold uppercase tracking-widest text-zinc-500 transition-colors marker:content-none group-open:text-cyan-400/80 [&::-webkit-details-marker]:hidden">
-                    <span className="select-none">Same-token send only · not USDC→EURC</span>
+                  <Link href="/liquidity">
+                    {vault ? "Add liquidity to enable swap" : "Open Pool — set vault & liquidity"}
+                  </Link>
+                </Button>
+                <details className="rounded-xl border-[3px] border-black bg-[#fafaf8] shadow-[4px_4px_0_0_#000]">
+                  <summary className="cursor-pointer list-none px-4 py-3 font-mono text-[10px] font-bold uppercase tracking-wide text-zinc-600 marker:content-none [&::-webkit-details-marker]:hidden">
+                    Same-token send only · not USDC→EURC
                   </summary>
-                  <div className="space-y-3 border-t border-white/5 px-4 pb-4 pt-3">
-                    <p className="font-mono text-[10px] leading-relaxed text-zinc-500">
-                      ERC-20 <span className="text-zinc-400">transfer</span> moves {paySide} only. It never mints the
-                      other stable.
+                  <div className="space-y-3 border-t-[3px] border-black px-4 pb-4 pt-3">
+                    <p className="text-xs text-zinc-600">
+                      ERC-20 <span className="font-mono font-bold">transfer</span> moves {paySide} only.
                     </p>
-                    <div className="flex items-center justify-between gap-3 rounded-xl border border-cyan-500/20 bg-black/45 px-3 py-3">
+                    <div className="flex items-center justify-between gap-3 rounded-lg border-[2px] border-black bg-white px-3 py-3 shadow-[2px_2px_0_0_#000]">
                       <div className="min-w-0">
-                        <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-cyan-500/70">
-                          Destination
-                        </p>
-                        <p className="mt-1 truncate font-mono text-xs text-cyan-100/90">
+                        <Label className="text-[10px]">Destination</Label>
+                        <p className="mt-1 truncate font-mono text-xs font-bold text-black">
                           {customRecipient
                             ? "Another wallet"
                             : address
@@ -611,41 +611,40 @@ export default function SwapPage() {
                           setCustomRecipient((v) => !v);
                           setRecipient("");
                         }}
-                        className={`relative h-8 w-[52px] shrink-0 rounded-full border transition-colors ${
-                          customRecipient
-                            ? "border-fuchsia-400/60 bg-fuchsia-500/20 shadow-[0_0_16px_rgba(255,43,214,0.25)]"
-                            : "border-cyan-500/40 bg-cyan-500/10 shadow-[0_0_12px_rgba(0,240,255,0.15)]"
-                        }`}
+                        className={cn(
+                          "relative h-8 w-[52px] shrink-0 rounded-full border-[2px] border-black transition-colors",
+                          customRecipient ? "bg-[#9146FF]/20" : "bg-zinc-200",
+                        )}
                       >
                         <span
-                          className={`absolute top-1 left-1 size-6 rounded-full bg-gradient-to-br from-white to-zinc-300 shadow-md transition-transform duration-200 ease-out ${
-                            customRecipient ? "translate-x-[22px]" : "translate-x-0"
-                          }`}
+                          className={cn(
+                            "absolute top-0.5 left-0.5 size-6 rounded-full border border-black bg-white shadow-sm transition-transform duration-200",
+                            customRecipient ? "translate-x-[22px]" : "translate-x-0",
+                          )}
                         />
                       </button>
                     </div>
                     {customRecipient && (
                       <div>
-                        <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-cyan-500/70">
-                          Recipient address
-                        </label>
-                        <input
+                        <Label>Recipient address</Label>
+                        <Input
                           value={recipient}
                           onChange={(e) => setRecipient(e.target.value)}
                           placeholder="0x…"
                           spellCheck={false}
-                          className="mt-2 w-full rounded-xl border border-white/10 bg-black/60 px-3 py-3 font-mono text-sm text-cyan-50 outline-none ring-cyan-500/30 placeholder:text-white/25 focus:border-cyan-500/50 focus:ring-2"
+                          className="mt-2 border-[3px] font-mono shadow-[4px_4px_0_0_#000]"
                         />
                         {recipient.trim() !== "" && !recipientValid && (
-                          <p className="mt-1 text-xs text-red-400/90">Enter a valid 0x address</p>
+                          <p className="mt-1 text-xs font-medium text-red-600">Enter a valid 0x address</p>
                         )}
                       </div>
                     )}
-                    <button
+                    <Button
                       type="button"
+                      variant="brutalOutline"
+                      className="w-full font-mono text-xs uppercase"
                       disabled={!canTransfer || busy !== null}
                       onClick={onTransfer}
-                      className="w-full rounded-xl border border-zinc-600 bg-zinc-800/80 py-3 font-mono text-xs font-bold uppercase tracking-wide text-zinc-200 hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-35"
                     >
                       {busy === "transfer"
                         ? "Sending…"
@@ -656,28 +655,30 @@ export default function SwapPage() {
                             : !address && !customRecipient
                               ? "Connect wallet"
                               : `Transfer ${paySide} only`}
-                    </button>
+                    </Button>
                   </div>
                 </details>
-              </div>
+              </>
             )}
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {lastTxHash && (
-        <div className="mt-6 rounded-xl border border-cyan-500/25 bg-[#050510] px-4 py-4 font-mono text-xs text-cyan-100/90 shadow-[0_0_24px_rgba(0,240,255,0.08)]">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-500/70">Last transaction</p>
-          <a
-            href={`${explorerBase}/tx/${lastTxHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-2 inline-flex items-center gap-1.5 text-cyan-400 underline-offset-2 hover:text-cyan-300 hover:underline"
-          >
-            {lastTxHash.slice(0, 18)}…{lastTxHash.slice(-10)}
-            <ExternalLink className="size-3.5 shrink-0" aria-hidden />
-          </a>
-        </div>
+        <Card variant="brutal">
+          <CardContent className="pt-6">
+            <Label className="text-[10px]">Last transaction</Label>
+            <a
+              href={`${explorerBase}/tx/${lastTxHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex items-center gap-1.5 font-mono text-sm font-bold text-[#5c16c5] underline-offset-2 hover:underline"
+            >
+              {lastTxHash.slice(0, 18)}…{lastTxHash.slice(-10)}
+              <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+            </a>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
