@@ -9,13 +9,14 @@ import { formatUnits, isAddress } from "viem";
 import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { requireTxSuccess } from "@/lib/require-tx-success";
+import { WrongNetworkBanner } from "@/components/stable-vault/wrong-network-banner";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
-import { STABLE_TOKEN_DECIMALS, STABLE_VAULT_CHAIN_ID } from "@/lib/stable-vault/constants";
+import { STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
 
 const SESSION_KEY = "vibefunds_admin_unlocked";
 const ADMIN_PASSWORD = "growthlive123$";
@@ -24,7 +25,7 @@ export default function AdminVaultPage() {
   const config = useConfig();
   const { address, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
-  const { vault } = useStableVaultAddresses();
+  const { vault, chainId, isSupportedChain, eurStableSymbol } = useStableVaultAddresses();
 
   const [unlocked, setUnlocked] = useState(false);
   const [pw, setPw] = useState("");
@@ -39,44 +40,46 @@ export default function AdminVaultPage() {
     }
   }, []);
 
+  const poolEnabled = Boolean(vault && isSupportedChain && unlocked);
+
   const { data: owner } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "owner",
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault) && unlocked },
+    chainId,
+    query: { enabled: poolEnabled },
   });
 
   const { data: reserveUsdc, refetch: refetchR } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "reserveUsdc",
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault) && unlocked },
+    chainId,
+    query: { enabled: poolEnabled },
   });
 
   const { data: reserveEurc } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "reserveEurc",
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault) && unlocked },
+    chainId,
+    query: { enabled: poolEnabled },
   });
 
   const { data: totalLp } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "totalLp",
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault) && unlocked },
+    chainId,
+    query: { enabled: poolEnabled },
   });
 
   const { data: usdPerEurc } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "usdPerEurc1e18",
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault) && unlocked },
+    chainId,
+    query: { enabled: poolEnabled },
   });
 
   const isContractOwner = Boolean(
@@ -105,12 +108,12 @@ export default function AdminVaultPage() {
   }, [refetchR]);
 
   async function onNudge() {
-    if (!vault) return;
+    if (!vault || !isSupportedChain) return;
     setBusy("nudge");
     setMsg(null);
     try {
       const hash = await writeContractAsync({
-        chainId: STABLE_VAULT_CHAIN_ID,
+        chainId,
         address: vault,
         abi: stableSwapMicroVaultAbi,
         functionName: "nudgePool",
@@ -128,7 +131,7 @@ export default function AdminVaultPage() {
   }
 
   async function onMicroPull() {
-    if (!vault) return;
+    if (!vault || !isSupportedChain) return;
     const u = keeperUser.trim();
     if (!isAddress(u)) {
       setMsg("Enter a valid user address.");
@@ -138,7 +141,7 @@ export default function AdminVaultPage() {
     setMsg(null);
     try {
       const hash = await writeContractAsync({
-        chainId: STABLE_VAULT_CHAIN_ID,
+        chainId,
         address: vault,
         abi: stableSwapMicroVaultAbi,
         functionName: "microPullAndNudge",
@@ -190,6 +193,13 @@ export default function AdminVaultPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
+      {isConnected && !isSupportedChain ? <WrongNetworkBanner /> : null}
+      {isConnected && isSupportedChain && !vault ? (
+        <p className="rounded-lg border border-amber-600/50 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          No vault configured for this chain. Set <code className="font-mono text-xs">NEXT_PUBLIC_*_VAULT_ADDRESS</code>{" "}
+          for Arc / Base / Monad.
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="font-mono text-xs font-bold uppercase tracking-widest text-[#5c16c5]">Admin / Vault</p>
@@ -209,15 +219,15 @@ export default function AdminVaultPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 font-mono text-xs text-zinc-700">
-          <p className="break-all">Vault: {vault}</p>
+          <p className="break-all">Vault: {vault ?? "—"}</p>
           <p>Owner: {owner ? String(owner) : "…"}</p>
           <p>
-            USDC: {reserveUsdc !== undefined ? formatUnits(reserveUsdc as bigint, STABLE_TOKEN_DECIMALS) : "—"} ·
-            EURC: {reserveEurc !== undefined ? formatUnits(reserveEurc as bigint, STABLE_TOKEN_DECIMALS) : "—"}
+            USDC: {reserveUsdc !== undefined ? formatUnits(reserveUsdc as bigint, STABLE_TOKEN_DECIMALS) : "—"} ·{" "}
+            {eurStableSymbol}: {reserveEurc !== undefined ? formatUnits(reserveEurc as bigint, STABLE_TOKEN_DECIMALS) : "—"}
           </p>
           <p>Total LP: {totalLp !== undefined ? formatUnits(totalLp as bigint, STABLE_TOKEN_DECIMALS) : "—"}</p>
           <p>
-            EURC/USD 1e18:{" "}
+            {eurStableSymbol}/USD 1e18:{" "}
             {usdPerEurc !== undefined ? formatUnits(usdPerEurc as bigint, 18) : "—"}
           </p>
         </CardContent>

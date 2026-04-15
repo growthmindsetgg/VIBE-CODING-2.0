@@ -7,16 +7,16 @@ import { toast } from "sonner";
 import { erc20Abi, formatUnits, isAddress, maxUint256, parseUnits, zeroAddress } from "viem";
 import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
+import { WrongNetworkBanner } from "@/components/stable-vault/wrong-network-banner";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
-import { arcTestnet } from "@/lib/chains/arc";
+import { getStableVaultChainById } from "@/lib/chains";
 import { requireTxSuccess } from "@/lib/require-tx-success";
-import { ARC_TESTNET_EURC, ARC_TESTNET_USDC } from "@/lib/contracts/addresses";
-import { B0, STABLE_TOKEN_DECIMALS, STABLE_VAULT_CHAIN_ID } from "@/lib/stable-vault/constants";
+import { B0, STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
 import {
   poolSpotEurcPerUsdc,
   refEurcPerUsdc,
@@ -26,7 +26,8 @@ import {
 import { quoteEurcToUsdc, quoteUsdcToEurc } from "@/lib/stable-swap/quote";
 import { cn } from "@/lib/utils";
 
-type PaySide = "USDC" | "EURC";
+/** Pay with USDC or the euro-side stable (EURC / EURW). */
+type PaySide = "USDC" | "EUR";
 
 const POLL_MS = 4000;
 const B10K = BigInt(10_000);
@@ -47,9 +48,17 @@ export default function SwapPage() {
   const config = useConfig();
   const { address, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
-  const { vault, usdc: hookUsdc, eurc: hookEurc } = useStableVaultAddresses();
-  const usdcAddr = hookUsdc ?? ARC_TESTNET_USDC;
-  const eurcAddr = hookEurc ?? ARC_TESTNET_EURC;
+  const {
+    vault,
+    usdc: usdcAddr,
+    eurc: eurcAddr,
+    chainId,
+    isSupportedChain,
+    explorerBaseUrl,
+    eurStableSymbol,
+  } = useStableVaultAddresses();
+
+  const chainName = getStableVaultChainById(chainId)?.name ?? "Network";
 
   const [paySide, setPaySide] = useState<PaySide>("USDC");
   const [amountIn, setAmountIn] = useState("");
@@ -60,31 +69,34 @@ export default function SwapPage() {
   const [lastTxHash, setLastTxHash] = useState<`0x${string}` | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const receiveSide: PaySide = paySide === "USDC" ? "EURC" : "USDC";
-  const explorerBase = arcTestnet.blockExplorers.default.url;
+  const receiveSide: PaySide = paySide === "USDC" ? "EUR" : "USDC";
+  const payTokenLabel = paySide === "USDC" ? "USDC" : eurStableSymbol;
+  const receiveTokenLabel = receiveSide === "USDC" ? "USDC" : eurStableSymbol;
+
+  const poolEnabled = Boolean(vault && isSupportedChain && usdcAddr && eurcAddr);
 
   const { data: reserveUsdc, refetch: refetchReserves } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "reserveUsdc",
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault), refetchInterval: POLL_MS },
+    chainId,
+    query: { enabled: poolEnabled, refetchInterval: POLL_MS },
   });
 
   const { data: reserveEurc, refetch: refetchReservesE } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "reserveEurc",
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault), refetchInterval: POLL_MS },
+    chainId,
+    query: { enabled: poolEnabled, refetchInterval: POLL_MS },
   });
 
   const { data: totalLp, refetch: refetchLp } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "totalLp",
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault), refetchInterval: POLL_MS },
+    chainId,
+    query: { enabled: poolEnabled, refetchInterval: POLL_MS },
   });
 
   const { data: usdcBal, refetch: refetchUsdcBal } = useReadContract({
@@ -92,8 +104,8 @@ export default function SwapPage() {
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(usdcAddr && address), refetchInterval: POLL_MS },
+    chainId,
+    query: { enabled: Boolean(usdcAddr && address && isSupportedChain), refetchInterval: POLL_MS },
   });
 
   const { data: eurcBal, refetch: refetchEurcBal } = useReadContract({
@@ -101,8 +113,8 @@ export default function SwapPage() {
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(eurcAddr && address), refetchInterval: POLL_MS },
+    chainId,
+    query: { enabled: Boolean(eurcAddr && address && isSupportedChain), refetchInterval: POLL_MS },
   });
 
   const payToken = paySide === "USDC" ? usdcAddr : eurcAddr;
@@ -113,8 +125,8 @@ export default function SwapPage() {
     abi: erc20Abi,
     functionName: "allowance",
     args: address && vault && payToken ? [address, vault] : undefined,
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(address && vault && payToken), refetchInterval: POLL_MS },
+    chainId,
+    query: { enabled: Boolean(address && vault && payToken && isSupportedChain), refetchInterval: POLL_MS },
   });
 
   const rU = reserveUsdc ?? B0;
@@ -181,11 +193,15 @@ export default function SwapPage() {
   }, [customRecipient, recipient, address]);
 
   const canAmmSwap = Boolean(
-    ammReady && vault && parsedIn > B0 && !needApproval && isConnected,
+    ammReady && vault && parsedIn > B0 && !needApproval && isConnected && isSupportedChain,
   );
 
   const canTransfer = Boolean(
-    isConnected && transferDestination !== undefined && parsedIn > B0 && payToken,
+    isConnected &&
+      isSupportedChain &&
+      transferDestination !== undefined &&
+      parsedIn > B0 &&
+      payToken,
   );
 
   const refEurcPerUsdcHint = refEurcPerUsdc();
@@ -194,7 +210,7 @@ export default function SwapPage() {
   const eurcShortfallHint = ammReady ? roughEurcShortfallForPeg(rU, rE, refEurcPerUsdcHint) : B0;
 
   function flip() {
-    setPaySide((s) => (s === "USDC" ? "EURC" : "USDC"));
+    setPaySide((s) => (s === "USDC" ? "EUR" : "USDC"));
     setAmountIn("");
     setLastTxHash(null);
   }
@@ -235,7 +251,7 @@ export default function SwapPage() {
     setLastTxHash(null);
     try {
       const hash = await writeContractAsync({
-        chainId: STABLE_VAULT_CHAIN_ID,
+        chainId,
         address: payToken,
         abi: erc20Abi,
         functionName: "approve",
@@ -259,24 +275,24 @@ export default function SwapPage() {
     setLastTxHash(null);
     try {
       const hash = await writeContractAsync({
-        chainId: STABLE_VAULT_CHAIN_ID,
+        chainId,
         address: vault,
         abi: stableSwapMicroVaultAbi,
         functionName: paySide === "USDC" ? "swapUsdcForEurc" : "swapEurcForUsdc",
         args: [parsedIn, minOut],
       });
       const swapRc = await waitForTransactionReceipt(config, { hash });
-      requireTxSuccess(swapRc, "Swap reverted — check slippage, pool liquidity, and ArcScan.");
+      requireTxSuccess(swapRc, "Swap reverted — check slippage, pool liquidity, and the block explorer.");
       setLastTxHash(hash);
       toast.success("Swap confirmed", {
         description: (
           <a
-            href={`${explorerBase}/tx/${hash}`}
+            href={`${explorerBaseUrl}/tx/${hash}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-[#5c16c5] underline"
           >
-            View on ArcScan <ExternalLink className="size-3" />
+            View on explorer <ExternalLink className="size-3" />
           </a>
         ),
       });
@@ -296,7 +312,7 @@ export default function SwapPage() {
     setLastTxHash(null);
     try {
       const hash = await writeContractAsync({
-        chainId: STABLE_VAULT_CHAIN_ID,
+        chainId,
         address: payToken,
         abi: erc20Abi,
         functionName: "transfer",
@@ -305,15 +321,15 @@ export default function SwapPage() {
       const trRc = await waitForTransactionReceipt(config, { hash });
       requireTxSuccess(trRc, "Transfer reverted.");
       setLastTxHash(hash);
-      toast.success(`${paySide} transferred (same token — not a cross-asset swap)`, {
+      toast.success(`${payTokenLabel} transferred (same token — not a cross-asset swap)`, {
         description: (
           <a
-            href={`${explorerBase}/tx/${hash}`}
+            href={`${explorerBaseUrl}/tx/${hash}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-[#5c16c5] underline"
           >
-            View on ArcScan <ExternalLink className="size-3" />
+            View on explorer <ExternalLink className="size-3" />
           </a>
         ),
       });
@@ -328,6 +344,9 @@ export default function SwapPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-6 pb-16">
+      {isConnected && !isSupportedChain ? (
+        <WrongNetworkBanner className="rounded-xl border border-amber-600/60 bg-amber-50 px-4 py-3 text-sm text-amber-950" />
+      ) : null}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="font-mono text-xs font-bold uppercase tracking-widest text-[#5c16c5]">Vibefunds / Swap</p>
@@ -335,7 +354,15 @@ export default function SwapPage() {
             Swap
           </h1>
           <p className="mt-2 font-mono text-xs text-zinc-600">
-            Arc testnet · {ARC_TESTNET_USDC.slice(0, 10)}… · {ARC_TESTNET_EURC.slice(0, 10)}…
+            {chainName}
+            {usdcAddr && eurcAddr ? (
+              <>
+                {" "}
+                · {usdcAddr.slice(0, 10)}… · {eurcAddr.slice(0, 10)}…
+              </>
+            ) : (
+              " · connect on Arc, Base, or Monad"
+            )}
           </p>
         </div>
         <Button type="button" variant="brutalOutline" size="sm" onClick={() => refreshAll()} className="font-mono text-xs uppercase">
@@ -371,7 +398,7 @@ export default function SwapPage() {
                 </p>
               </div>
               <div>
-                <Label className="text-[10px]">EURC</Label>
+                <Label className="text-[10px]">{eurStableSymbol}</Label>
                 <p className="mt-1 font-mono text-lg font-bold tabular-nums text-black">
                   {eurcBal !== undefined ? formatUnits(eurcBal as bigint, STABLE_TOKEN_DECIMALS) : "—"}
                 </p>
@@ -391,21 +418,23 @@ export default function SwapPage() {
       {!ammReady && (
         <Card variant="brutal" className="border-amber-600/60 bg-amber-50/90">
           <CardContent className="pt-6 text-sm leading-relaxed text-zinc-800">
-            <strong className="text-black">USDC → EURC uses the vault pool.</strong> Only StableSwapMicroVault can trade
-            one stable for the other.{" "}
+            <strong className="text-black">
+              USDC ↔ {eurStableSymbol} uses the vault pool.
+            </strong>{" "}
+            Only StableSwapMicroVault can trade one stable for the other.{" "}
             {!vault ? (
               <>
-                Set <span className="font-mono text-xs">NEXT_PUBLIC_STABLE_VAULT_ADDRESS</span> or use the{" "}
+                Set the vault env for this chain (see Pool page) or use{" "}
                 <Link href="/liquidity" className="font-bold text-[#5c16c5] underline underline-offset-2">
                   Pool
                 </Link>{" "}
-                page, then add liquidity.
+                to add liquidity.
               </>
             ) : (
               <>
                 Vault is set —{" "}
                 <Link href="/liquidity" className="font-bold text-[#5c16c5] underline underline-offset-2">
-                  add USDC + EURC liquidity
+                  add USDC + {eurStableSymbol} liquidity
                 </Link>{" "}
                 to enable swaps.
               </>
@@ -424,11 +453,11 @@ export default function SwapPage() {
         <Card variant="brutal" className="border-sky-700/40 bg-sky-50/95">
           <CardContent className="space-y-3 pt-6 text-sm leading-relaxed text-zinc-800">
             <p className="font-[family-name:var(--font-display)] text-base font-bold text-black">
-              Why isn&apos;t this ~0.92 EURC per USDC?
+              Why isn&apos;t this ~0.92 {eurStableSymbol} per USDC?
             </p>
             <p className="text-xs">
               This vault uses a <strong>constant-product AMM</strong> (like Uniswap v2): your execution price comes only
-              from <strong>reserveUSDC</strong> and <strong>reserveEURC</strong>. The deploy-time{" "}
+              from <strong>reserveUSDC</strong> and <strong>reserve{eurStableSymbol}</strong>. The deploy-time{" "}
               <span className="font-mono text-[11px]">usdPerEurc1e18</span> is used for the owner <strong>nudge</strong>{" "}
               toward equal <em>USD</em> weight — it does <strong>not</strong> rewrite swap quotes.
             </p>
@@ -444,19 +473,19 @@ export default function SwapPage() {
               </li>
               <li>
                 Pool marginal spot:{" "}
-                {poolSpotEurcPerUsdc_ !== null ? `${poolSpotEurcPerUsdc_.toFixed(6)} EURC per USDC` : "—"}
+                {poolSpotEurcPerUsdc_ !== null ? `${poolSpotEurcPerUsdc_.toFixed(6)} ${eurStableSymbol} per USDC` : "—"}
               </li>
               {fxSkewPct !== null && fxSkewPct > 0.5 && (
                 <li className="font-sans text-amber-900">
                   Pool implied rate is ~{fxSkewPct.toFixed(1)}% away from that hint — reserves are skewed (e.g. lots of
-                  USDC, little EURC), so small trades still show high impact.
+                  USDC, little {eurStableSymbol}), so small trades still show high impact.
                 </li>
               )}
               {eurcShortfallHint > B0 && (
                 <li>
-                  Order-of-magnitude EURC to move marginal spot toward the hint (add via Pool, then recheck): ~
-                  {formatUnits(eurcShortfallHint, STABLE_TOKEN_DECIMALS)} EURC vs current{" "}
-                  {formatUnits(rE, STABLE_TOKEN_DECIMALS)} EURC / {formatUnits(rU, STABLE_TOKEN_DECIMALS)} USDC
+                  Order-of-magnitude {eurStableSymbol} to move marginal spot toward the hint (add via Pool, then
+                  recheck): ~{formatUnits(eurcShortfallHint, STABLE_TOKEN_DECIMALS)} {eurStableSymbol} vs current{" "}
+                  {formatUnits(rE, STABLE_TOKEN_DECIMALS)} {eurStableSymbol} / {formatUnits(rU, STABLE_TOKEN_DECIMALS)} USDC
                 </li>
               )}
             </ul>
@@ -537,13 +566,13 @@ export default function SwapPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPaySide("EURC")}
+                    onClick={() => setPaySide("EUR")}
                     className={cn(
                       "rounded-md px-3 font-mono text-[10px] font-bold uppercase transition-colors",
-                      paySide === "EURC" ? "bg-black text-white" : "text-zinc-500 hover:text-black",
+                      paySide === "EUR" ? "bg-black text-white" : "text-zinc-500 hover:text-black",
                     )}
                   >
-                    EURC
+                    {eurStableSymbol}
                   </button>
                 </div>
               </div>
@@ -591,12 +620,12 @@ export default function SwapPage() {
                 <p>
                   Min. out ({slippageBps / 100}% slip):{" "}
                   <span className="font-bold text-black">{formatUnits(minOut, STABLE_TOKEN_DECIMALS)}</span>{" "}
-                  {receiveSide}
+                  {receiveTokenLabel}
                 </p>
               )}
               {ammReady && (
                 <p>
-                  Reserves USDC {formatUnits(rU, STABLE_TOKEN_DECIMALS)} · EURC{" "}
+                  Reserves USDC {formatUnits(rU, STABLE_TOKEN_DECIMALS)} · {eurStableSymbol}{" "}
                   {formatUnits(rE, STABLE_TOKEN_DECIMALS)}
                 </p>
               )}
@@ -616,7 +645,7 @@ export default function SwapPage() {
                     disabled={busy !== null}
                     onClick={onApprove}
                   >
-                    {busy === "approve" ? "Approving…" : `Approve ${paySide}`}
+                    {busy === "approve" ? "Approving…" : `Approve ${payTokenLabel}`}
                   </Button>
                 )}
                 <Button
@@ -633,7 +662,7 @@ export default function SwapPage() {
                       ? "Approve token first"
                       : parsedIn <= B0
                         ? "Enter amount"
-                        : `Swap ${paySide} for ${receiveSide}`}
+                        : `Swap ${payTokenLabel} for ${receiveTokenLabel}`}
                 </Button>
               </>
             ) : (
@@ -650,11 +679,11 @@ export default function SwapPage() {
                 </Button>
                 <details className="rounded-xl border-[3px] border-black bg-[#fafaf8] shadow-[4px_4px_0_0_#000]">
                   <summary className="cursor-pointer list-none px-4 py-3 font-mono text-[10px] font-bold uppercase tracking-wide text-zinc-600 marker:content-none [&::-webkit-details-marker]:hidden">
-                    Same-token send only · not USDC→EURC
+                    Same-token send only · not USDC↔{eurStableSymbol}
                   </summary>
                   <div className="space-y-3 border-t-[3px] border-black px-4 pb-4 pt-3">
                     <p className="text-xs text-zinc-600">
-                      ERC-20 <span className="font-mono font-bold">transfer</span> moves {paySide} only.
+                      ERC-20 <span className="font-mono font-bold">transfer</span> moves {payTokenLabel} only.
                     </p>
                     <div className="flex items-center justify-between gap-3 rounded-lg border-[2px] border-black bg-white px-3 py-3 shadow-[2px_2px_0_0_#000]">
                       <div className="min-w-0">
@@ -719,7 +748,7 @@ export default function SwapPage() {
                             ? "Enter recipient"
                             : !address && !customRecipient
                               ? "Connect wallet"
-                              : `Transfer ${paySide} only`}
+                              : `Transfer ${payTokenLabel} only`}
                     </Button>
                   </div>
                 </details>
@@ -734,7 +763,7 @@ export default function SwapPage() {
           <CardContent className="pt-6">
             <Label className="text-[10px]">Last transaction</Label>
             <a
-              href={`${explorerBase}/tx/${lastTxHash}`}
+              href={`${explorerBaseUrl}/tx/${lastTxHash}`}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-2 inline-flex items-center gap-1.5 font-mono text-sm font-bold text-[#5c16c5] underline-offset-2 hover:underline"

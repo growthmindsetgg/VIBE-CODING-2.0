@@ -1,6 +1,5 @@
-import { arcTestnet } from "@/lib/chains/arc";
+export { isStableVaultSupportedChainId } from "@/lib/chains";
 
-export const STABLE_VAULT_CHAIN_ID = arcTestnet.id;
 export const STABLE_TOKEN_DECIMALS = 6;
 
 export const B0 = BigInt(0);

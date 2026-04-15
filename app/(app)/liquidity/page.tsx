@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { createPublicClient, erc20Abi, formatUnits, http, maxUint256, parseUnits, zeroAddress } from "viem";
 import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
+import { WrongNetworkBanner } from "@/components/stable-vault/wrong-network-banner";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,21 +16,17 @@ import {
   stableSwapMicroVaultAbi,
   stableSwapMicroVaultAddLiquiditySimAbi,
 } from "@/lib/abis/stable-swap-micro-vault";
-import { arcTestnet } from "@/lib/chains/arc";
+import { getStableVaultChainById, getStableVaultRpcHttpUrl } from "@/lib/chains";
 import { formatAllowanceHuman } from "@/lib/format-allowance";
 import { formatOnchainError } from "@/lib/format-onchain-error";
 import { requireTxSuccess } from "@/lib/require-tx-success";
-import { B0, STABLE_TOKEN_DECIMALS, STABLE_VAULT_CHAIN_ID } from "@/lib/stable-vault/constants";
+import { B0, STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
 
 /**
  * StableSwapMicroVault: `addLiquidity(uint256 usdIn, uint256 eurIn, uint256 minLpOut)` — USDC = usdIn, EURC = eurIn.
  * LP mints to msg.sender. Six decimals for both tokens.
  */
 const STABLE_PAIR_DECIMALS = STABLE_TOKEN_DECIMALS;
-
-const ARC_RPC =
-  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_ARC_RPC_URL) ||
-  arcTestnet.rpcUrls.default.http[0];
 
 function normalizeAmountInput(raw: string) {
   return raw.trim().replace(/,/g, ".");
@@ -41,7 +38,15 @@ export default function LiquidityPage() {
   const config = useConfig();
   const { address, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
-  const { vault, usdc: tokenUsdc, eurc: tokenEurc } = useStableVaultAddresses();
+  const {
+    vault,
+    usdc: tokenUsdc,
+    eurc: tokenEurc,
+    chainId,
+    isSupportedChain,
+    explorerBaseUrl,
+    eurStableSymbol,
+  } = useStableVaultAddresses();
 
   const [depU, setDepU] = useState("10");
   const [depE, setDepE] = useState("10");
@@ -58,48 +63,47 @@ export default function LiquidityPage() {
     depERef.current = depE;
   }, [depU, depE]);
 
-  const explorerBase = arcTestnet.blockExplorers.default.url;
-
-  const arcSimClient = useMemo(
-    () =>
-      createPublicClient({
-        chain: arcTestnet,
-        transport: http(ARC_RPC),
-      }),
-    [],
-  );
+  const simClient = useMemo(() => {
+    const chain = getStableVaultChainById(chainId);
+    if (!chain) return null;
+    const rpcUrl = getStableVaultRpcHttpUrl(chainId);
+    return createPublicClient({
+      chain,
+      transport: http(rpcUrl),
+    });
+  }, [chainId]);
 
   const { data: reserveUsdc, refetch: refetchReserves } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "reserveUsdc",
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault) },
+    chainId,
+    query: { enabled: Boolean(vault && isSupportedChain) },
   });
 
   const { data: reserveEurc, refetch: refetchReserveEurc } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "reserveEurc",
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault) },
+    chainId,
+    query: { enabled: Boolean(vault && isSupportedChain) },
   });
 
   const { refetch: refetchLp } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "totalLp",
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault) },
+    chainId,
+    query: { enabled: Boolean(vault && isSupportedChain) },
   });
 
   const { data: myLp, refetch: refetchMyLp } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "lpBalance",
     args: address ? [address] : undefined,
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault && address) },
+    chainId,
+    query: { enabled: Boolean(vault && address && isSupportedChain) },
   });
 
   const { data: allowanceUsdc, refetch: refetchAllowanceUsdc } = useReadContract({
@@ -107,8 +111,8 @@ export default function LiquidityPage() {
     abi: erc20Abi,
     functionName: "allowance",
     args: address && tokenUsdc && vault ? [address, vault] : undefined,
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(tokenUsdc && vault && address) },
+    chainId,
+    query: { enabled: Boolean(tokenUsdc && vault && address && isSupportedChain) },
   });
 
   const { data: allowanceEurc, refetch: refetchAllowanceEurc } = useReadContract({
@@ -116,35 +120,35 @@ export default function LiquidityPage() {
     abi: erc20Abi,
     functionName: "allowance",
     args: address && tokenEurc && vault ? [address, vault] : undefined,
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(tokenEurc && vault && address) },
+    chainId,
+    query: { enabled: Boolean(tokenEurc && vault && address && isSupportedChain) },
   });
 
   const { data: microIn } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "microOptIn",
     args: address ? [address] : undefined,
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault && address) },
+    chainId,
+    query: { enabled: Boolean(vault && address && isSupportedChain) },
   });
 
   const { data: microMaxU } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "microMaxUsdcPerTx",
     args: address ? [address] : undefined,
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault && address) },
+    chainId,
+    query: { enabled: Boolean(vault && address && isSupportedChain) },
   });
 
   const { data: microMaxE } = useReadContract({
-    address: vault,
+    address: vault ?? undefined,
     abi: stableSwapMicroVaultAbi,
     functionName: "microMaxEurcPerTx",
     args: address ? [address] : undefined,
-    chainId: STABLE_VAULT_CHAIN_ID,
-    query: { enabled: Boolean(vault && address) },
+    chainId,
+    query: { enabled: Boolean(vault && address && isSupportedChain) },
   });
 
   const rU = reserveUsdc ?? B0;
@@ -200,6 +204,7 @@ export default function LiquidityPage() {
 
   const canAddLiquidity =
     isConnected &&
+    isSupportedChain &&
     Boolean(address && vault && tokenUsdc && tokenEurc) &&
     parsedDeposit !== null &&
     parsedDeposit.usdIn > B0 &&
@@ -207,7 +212,11 @@ export default function LiquidityPage() {
     usdcSufficient &&
     eurcSufficient;
 
-  async function approveToken(token: `0x${string}`, label: "USDC" | "EURC", busyKey: "approve-usdc" | "approve-eurc") {
+  async function approveToken(
+    token: `0x${string}`,
+    label: string,
+    busyKey: "approve-usdc" | "approve-eurc",
+  ) {
     if (!address) throw new Error("Connect wallet");
     if (!vault || vault.toLowerCase() === zeroAddress.toLowerCase()) throw new Error("Invalid vault address.");
     setBusy(busyKey);
@@ -215,7 +224,7 @@ export default function LiquidityPage() {
     try {
       console.log(`[approve ${label}]`, { token, spenderVault: vault, account: address });
       const hash = await writeContractAsync({
-        chainId: STABLE_VAULT_CHAIN_ID,
+        chainId,
         address: token,
         abi: erc20Abi,
         functionName: "approve",
@@ -227,7 +236,7 @@ export default function LiquidityPage() {
       toast.success(`${label} approved`, {
         description: (
           <a
-            href={`${explorerBase}/tx/${hash}`}
+            href={`${explorerBaseUrl}/tx/${hash}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-cyan-300 underline"
@@ -290,12 +299,16 @@ export default function LiquidityPage() {
       }
       if (allowE < eurIn) {
         throw new Error(
-          `EURC allowance too low (${formatAllowanceHuman(allowE, STABLE_PAIR_DECIMALS)}). Click “Approve EURC” first.`,
+          `${eurStableSymbol} allowance too low (${formatAllowanceHuman(allowE, STABLE_PAIR_DECIMALS)}). Click “Approve ${eurStableSymbol}” first.`,
         );
       }
 
+      if (!simClient) {
+        throw new Error("RPC client not ready for this network.");
+      }
+
       try {
-        await arcSimClient.simulateContract({
+        await simClient.simulateContract({
           account: address,
           address: vault,
           abi: stableSwapMicroVaultAddLiquiditySimAbi,
@@ -310,7 +323,7 @@ export default function LiquidityPage() {
       }
 
       const hash = await writeContractAsync({
-        chainId: STABLE_VAULT_CHAIN_ID,
+        chainId,
         address: vault,
         abi: stableSwapMicroVaultAbi,
         functionName: "addLiquidity",
@@ -320,7 +333,7 @@ export default function LiquidityPage() {
       const depReceipt = await waitForTransactionReceipt(config, { hash });
       if (depReceipt.status !== "success") {
         throw new Error(
-          "Add liquidity transaction reverted on-chain. Open ArcScan for this hash to see revert details.",
+          "Add liquidity transaction reverted on-chain. Open the block explorer for this hash to see revert details.",
         );
       }
 
@@ -330,7 +343,7 @@ export default function LiquidityPage() {
         description: (
           <span className="font-mono text-xs">
             <a
-              href={`${explorerBase}/tx/${hash}`}
+              href={`${explorerBaseUrl}/tx/${hash}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-cyan-300 underline"
@@ -358,7 +371,7 @@ export default function LiquidityPage() {
       const lp = parseUnits(normalizeAmountInput(remLp) || "0", STABLE_PAIR_DECIMALS);
       if (lp <= B0) throw new Error("Enter LP amount to remove.");
       const hash = await writeContractAsync({
-        chainId: STABLE_VAULT_CHAIN_ID,
+        chainId,
         address: vault,
         abi: stableSwapMicroVaultAbi,
         functionName: "removeLiquidity",
@@ -371,12 +384,12 @@ export default function LiquidityPage() {
       toast.success("Liquidity removed", {
         description: (
           <a
-            href={`${explorerBase}/tx/${hash}`}
+            href={`${explorerBaseUrl}/tx/${hash}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-cyan-300 underline"
           >
-            ArcScan <ExternalLink className="size-3" />
+            Explorer <ExternalLink className="size-3" />
           </a>
         ),
       });
@@ -397,7 +410,7 @@ export default function LiquidityPage() {
       const mu = parseUnits(normalizeAmountInput(microU) || "0", STABLE_PAIR_DECIMALS);
       const me = parseUnits(normalizeAmountInput(microE) || "0", STABLE_PAIR_DECIMALS);
       const hash = await writeContractAsync({
-        chainId: STABLE_VAULT_CHAIN_ID,
+        chainId,
         address: vault,
         abi: stableSwapMicroVaultAbi,
         functionName: "configureMicroPull",
@@ -405,7 +418,7 @@ export default function LiquidityPage() {
       });
       const m1 = await waitForTransactionReceipt(config, { hash });
       requireTxSuccess(m1, "Micro-pull config reverted.");
-      setMsg("Micro-pull enabled. Approve USDC + EURC to the vault for keeper pulls.");
+      setMsg(`Micro-pull enabled. Approve USDC + ${eurStableSymbol} to the vault for keeper pulls.`);
       toast.success("Micro-pull saved");
     } catch (e) {
       const text = formatOnchainError(e);
@@ -422,7 +435,7 @@ export default function LiquidityPage() {
     setMsg(null);
     try {
       const hash = await writeContractAsync({
-        chainId: STABLE_VAULT_CHAIN_ID,
+        chainId,
         address: vault,
         abi: stableSwapMicroVaultAbi,
         functionName: "configureMicroPull",
@@ -446,7 +459,7 @@ export default function LiquidityPage() {
     setMsg(null);
     try {
       await approveToken(tokenUsdc, "USDC", "approve-usdc");
-      await approveToken(tokenEurc, "EURC", "approve-eurc");
+      await approveToken(tokenEurc, eurStableSymbol, "approve-eurc");
     } catch {
       /* errors already surfaced via approveToken */
     }
@@ -472,6 +485,18 @@ export default function LiquidityPage() {
   return (
     <div className="mx-auto max-w-lg">
       <div className="space-y-8 rounded-2xl border border-cyan-500/25 bg-[#050508] p-6 font-mono shadow-[0_0_80px_rgba(168,85,247,0.12),inset_0_1px_0_rgba(0,240,255,0.06)] md:p-8">
+        {isConnected && !isSupportedChain ? <WrongNetworkBanner className="mb-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100" /> : null}
+        {isConnected && isSupportedChain && !vault ? (
+          <div className="mb-2 rounded-xl border border-fuchsia-500/40 bg-fuchsia-950/40 px-4 py-3 text-sm text-fuchsia-100">
+            <p className="font-semibold">Stable vault not configured on this chain</p>
+            <p className="mt-1 text-xs text-fuchsia-200/80">
+              Deploy StableSwapMicroVault and set{" "}
+              <code className="text-emerald-300">NEXT_PUBLIC_BASE_VAULT_ADDRESS</code> (Base) or{" "}
+              <code className="text-emerald-300">NEXT_PUBLIC_MONAD_VAULT_ADDRESS</code> (Monad), or{" "}
+              <code className="text-emerald-300">NEXT_PUBLIC_STABLE_VAULT_ADDRESS</code> (Arc).
+            </p>
+          </div>
+        ) : null}
         <div>
           <p className="bg-gradient-to-r from-fuchsia-400 via-cyan-300 to-emerald-300 bg-clip-text font-mono text-xs font-bold uppercase tracking-[0.2em] text-transparent">
             Vibefunds / Pool
@@ -481,7 +506,7 @@ export default function LiquidityPage() {
           </h1>
           <p className="mt-2 text-sm text-cyan-100/70">
             Approve each token to the vault, then add liquidity. Vault:{" "}
-            <code className="break-all text-fuchsia-300/90">{vault}</code>
+            <code className="break-all text-fuchsia-300/90">{vault ?? "—"}</code>
           </p>
           <p className="mt-1 text-xs text-cyan-200/50">
             On-chain: <code className="text-emerald-300/80">addLiquidity(usdIn, eurIn, minLpOut)</code> with{" "}
@@ -508,7 +533,7 @@ export default function LiquidityPage() {
               <span className="text-fuchsia-300/70">({STABLE_PAIR_DECIMALS} dec)</span>
             </p>
             <p>
-              EURC: {formatUnits(rE, STABLE_PAIR_DECIMALS)}{" "}
+              {eurStableSymbol}: {formatUnits(rE, STABLE_PAIR_DECIMALS)}{" "}
               <span className="text-fuchsia-300/70">({STABLE_PAIR_DECIMALS} dec)</span>
             </p>
             <p className="sm:col-span-2 text-emerald-200/90">Your LP shares: {myLpStr}</p>
@@ -583,9 +608,9 @@ export default function LiquidityPage() {
                 type="button"
                 variant="outline"
                 disabled={!isConnected || busy !== null || !tokenEurc || !vault}
-                onClick={() => void approveToken(tokenEurc!, "EURC", "approve-eurc").catch(() => {})}
+                onClick={() => void approveToken(tokenEurc!, eurStableSymbol, "approve-eurc").catch(() => {})}
               >
-                {busy === "approve-eurc" ? "…" : "Approve EURC"}
+                {busy === "approve-eurc" ? "…" : `Approve ${eurStableSymbol}`}
               </Button>
             </div>
 
@@ -634,7 +659,7 @@ export default function LiquidityPage() {
           <CardHeader>
             <CardTitle className="text-base text-cyan-100">Micro-pull (optional)</CardTitle>
             <CardDescription>
-              Status: {microIn ? "on" : "off"} · caps USDC/EURC:{" "}
+              Status: {microIn ? "on" : "off"} · caps USDC/{eurStableSymbol}:{" "}
               {microMaxU !== undefined ? formatUnits(microMaxU as bigint, STABLE_PAIR_DECIMALS) : "—"} /{" "}
               {microMaxE !== undefined ? formatUnits(microMaxE as bigint, STABLE_PAIR_DECIMALS) : "—"}
             </CardDescription>
@@ -646,7 +671,7 @@ export default function LiquidityPage() {
                 <Input value={microU} onChange={(e) => setMicroU(e.target.value)} inputMode="decimal" className={inputNeon} />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-cyan-200/80">Max EURC / tx</Label>
+                <Label className="text-cyan-200/80">Max {eurStableSymbol} / tx</Label>
                 <Input value={microE} onChange={(e) => setMicroE(e.target.value)} inputMode="decimal" className={inputNeon} />
               </div>
             </div>

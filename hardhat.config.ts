@@ -42,6 +42,14 @@ export default defineConfig({
       name: "Arc Testnet",
       chainType: "generic",
     },
+    8453: {
+      name: "Base",
+      chainType: "l1",
+    },
+    143: {
+      name: "Monad",
+      chainType: "generic",
+    },
   },
   networks: {
     hardhatMainnet: {
@@ -53,6 +61,22 @@ export default defineConfig({
       chainType: "generic",
       chainId: 5042002,
       url: "https://rpc.testnet.arc.network",
+      accounts: [configVariable("DEPLOYER_PRIVATE_KEY")],
+      gasPrice: "auto",
+    },
+    "base-mainnet": {
+      type: "http",
+      chainType: "l1",
+      chainId: 8453,
+      url: process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org",
+      accounts: [configVariable("DEPLOYER_PRIVATE_KEY")],
+      gasPrice: "auto",
+    },
+    "monad-mainnet": {
+      type: "http",
+      chainType: "generic",
+      chainId: 143,
+      url: process.env.MONAD_RPC_URL?.trim() || "https://rpc.monad.xyz",
       accounts: [configVariable("DEPLOYER_PRIVATE_KEY")],
       gasPrice: "auto",
     },

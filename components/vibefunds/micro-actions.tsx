@@ -1,10 +1,11 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { erc20Abi, parseUnits } from "viem";
-import { useAccount, useWriteContract } from "wagmi";
+import { useAccount, useChainId, useWriteContract } from "wagmi";
 import { Button } from "@/components/ui/button";
-import { protocolTreasury, usdcAddress } from "@/lib/contracts/addresses";
-import { useState } from "react";
+import { getStableVaultAddresses, protocolTreasury } from "@/lib/contracts/addresses";
+import { isStableVaultSupportedChainId } from "@/lib/chains";
 
 const MICRO_USDC = "0.25";
 const INSTRUMENT_USDC = "1";
@@ -15,13 +16,17 @@ type MicroActionsProps = {
 
 export function MicroActions({ onInstrumentMock }: MicroActionsProps) {
   const { address, isConnected } = useAccount();
+  const chainId = useChainId();
   const { writeContractAsync, isPending } = useWriteContract();
   const [lastTx, setLastTx] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const token = usdcAddress();
+  const token = useMemo(() => {
+    if (!isStableVaultSupportedChainId(chainId)) return undefined;
+    return getStableVaultAddresses(chainId)?.usdc;
+  }, [chainId]);
+
   const treasuryFromEnv = protocolTreasury();
-  /** If no protocol treasury is set, send to the connected wallet (testnet demo / self-loop). */
   const recipient = treasuryFromEnv ?? address;
 
   async function pay(amount: string, memo: string) {
@@ -32,7 +37,7 @@ export function MicroActions({ onInstrumentMock }: MicroActionsProps) {
       return;
     }
     if (!token) {
-      setErr("Set NEXT_PUBLIC_USDC_ADDRESS (Arc testnet USDC) in .env.local or your host env, then redeploy / restart dev.");
+      setErr("Switch to Arc Testnet, Base, or Monad to send USDC.");
       return;
     }
     if (!recipient) {
@@ -41,6 +46,7 @@ export function MicroActions({ onInstrumentMock }: MicroActionsProps) {
     }
     try {
       const hash = await writeContractAsync({
+        chainId,
         address: token,
         abi: erc20Abi,
         functionName: "transfer",
@@ -88,12 +94,11 @@ export function MicroActions({ onInstrumentMock }: MicroActionsProps) {
         </Button>
       </div>
       {!isConnected && (
-        <p className="text-xs text-amber-800">Connect a wallet on Arc to send real USDC micro-pays.</p>
+        <p className="text-xs text-amber-800">Connect a wallet on Arc, Base, or Monad to send real USDC micro-pays.</p>
       )}
       {isConnected && !token && (
         <p className="text-xs text-amber-900">
-          Add <span className="font-mono text-zinc-800">NEXT_PUBLIC_USDC_ADDRESS</span> (official Arc testnet
-          USDC) to enable on-chain transfers.
+          Use the network switcher to select Arc Testnet, Base, or Monad — then USDC transfers are enabled.
         </p>
       )}
       {isConnected && token && !treasuryFromEnv && (

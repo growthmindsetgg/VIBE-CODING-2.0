@@ -11,6 +11,8 @@
     "compile": "hardhat compile",
     "deploy:arc": "hardhat run scripts/deploy.ts --network arc-testnet",
     "deploy:stable-vault": "hardhat run scripts/deploy-stable-vault.ts --network arc-testnet",
+    "deploy:stable-vault:base": "hardhat run scripts/deploy-stable-vault.ts --network base-mainnet",
+    "deploy:stable-vault:monad": "hardhat run scripts/deploy-stable-vault.ts --network monad-mainnet",
     "deploy:vercel": "vercel --prod"
   },
   "dependencies": {

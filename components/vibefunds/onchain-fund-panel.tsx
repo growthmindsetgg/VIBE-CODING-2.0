@@ -21,7 +21,8 @@ type OnchainFundPanelProps = {
 export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
   const { address, isConnected } = useAccount();
   const config = useConfig();
-  const usdc = usdcAddress();
+  /** VibeFund contracts are deployed on Arc testnet in this project. */
+  const usdc = usdcAddress(arcTestnet.id);
   const token = fund.shareTokenAddress;
   const fm = fund.fundManagerAddress;
 
