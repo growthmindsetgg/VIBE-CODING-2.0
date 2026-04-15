@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useChainId } from "wagmi";
 import { Toaster } from "sonner";
+import { getStableVaultChainById, isStableVaultSupportedChainId } from "@/lib/chains";
 import { AppTopNav } from "@/components/layout/app-top-nav";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +21,12 @@ const navAgent = [{ href: "/train-agent", label: "Train agent" }] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const chainId = useChainId();
+  const chain = getStableVaultChainById(chainId);
+  const chainLabel = chain ? `${chain.name} · ${chain.id}` : `Unsupported chain · ${chainId}`;
+  const chainBadgeTone = isStableVaultSupportedChainId(chainId)
+    ? "bg-white"
+    : "bg-amber-100 text-amber-900";
 
   function active(href: string) {
     if (href === "/marketplace") return pathname === "/marketplace";
@@ -107,8 +115,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <AppTopNav />
         <header className="flex flex-wrap items-center justify-end gap-3 border-b-[3px] border-black bg-[#dbeafe] px-4 py-3">
-          <span className="mr-auto rounded-md border-2 border-black bg-white px-2 py-1 font-mono text-xs font-bold shadow-[2px_2px_0_0_#000]">
-            Arc testnet · 5042002
+          <span
+            className={cn(
+              "mr-auto rounded-md border-2 border-black px-2 py-1 font-mono text-xs font-bold shadow-[2px_2px_0_0_#000]",
+              chainBadgeTone,
+            )}
+          >
+            {chainLabel}
           </span>
           <ConnectButton
             showBalance={false}
