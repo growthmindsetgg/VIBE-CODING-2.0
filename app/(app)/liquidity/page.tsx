@@ -212,6 +212,14 @@ export default function LiquidityPage() {
     usdcSufficient &&
     eurcSufficient;
 
+  const approveDisabledReason = useMemo(() => {
+    if (!isConnected) return "Connect your wallet first.";
+    if (!isSupportedChain) return "Switch to Arc Testnet, Base, or Monad.";
+    if (!vault) return "Vault is not configured on this chain yet.";
+    if (!tokenUsdc || !tokenEurc) return "Token addresses are missing for this chain.";
+    return null;
+  }, [isConnected, isSupportedChain, vault, tokenUsdc, tokenEurc]);
+
   async function approveToken(
     token: `0x${string}`,
     label: string,
@@ -287,7 +295,7 @@ export default function LiquidityPage() {
       });
 
       if (usdIn <= B0 || eurIn <= B0) {
-        throw new Error("Enter both USDC and EURC amounts (greater than zero).");
+        throw new Error(`Enter both USDC and ${eurStableSymbol} amounts (greater than zero).`);
       }
 
       const allowU = allowanceUsdc ?? B0;
@@ -573,7 +581,7 @@ export default function LiquidityPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="liq-eurc" className="text-cyan-200/80">
-                  EURC amount
+                  {eurStableSymbol} amount
                 </Label>
                 <Input
                   id="liq-eurc"
@@ -599,20 +607,25 @@ export default function LiquidityPage() {
               <Button
                 type="button"
                 variant="outline"
-                disabled={!isConnected || busy !== null || !tokenUsdc || !vault}
+                disabled={busy !== null || approveDisabledReason !== null}
                 onClick={() => void approveToken(tokenUsdc!, "USDC", "approve-usdc").catch(() => {})}
+                title={approveDisabledReason ?? undefined}
               >
                 {busy === "approve-usdc" ? "…" : "Approve USDC"}
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                disabled={!isConnected || busy !== null || !tokenEurc || !vault}
+                disabled={busy !== null || approveDisabledReason !== null}
                 onClick={() => void approveToken(tokenEurc!, eurStableSymbol, "approve-eurc").catch(() => {})}
+                title={approveDisabledReason ?? undefined}
               >
                 {busy === "approve-eurc" ? "…" : `Approve ${eurStableSymbol}`}
               </Button>
             </div>
+            {approveDisabledReason ? (
+              <p className="text-xs text-amber-300/90">{approveDisabledReason}</p>
+            ) : null}
 
             <Button
               type="button"
