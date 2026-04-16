@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Copy, ExternalLink, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { erc20Abi, formatUnits, maxUint256, parseUnits } from "viem";
+import { erc20Abi, formatUnits, getAddress, isAddress, maxUint256, parseUnits } from "viem";
 import { useAccount, useConfig, useReadContract, useSendTransaction, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 
@@ -16,12 +16,23 @@ import { Label } from "@/components/ui/label";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
 import { fetchZeroExPrice, fetchZeroExQuote } from "@/lib/aggregators/zerox";
 import { arcTestnet, getStableVaultChainById } from "@/lib/chains";
+import {
+  BASE_MAINNET_EURC,
+  BASE_MAINNET_USDC,
+  MONAD_MAINNET_EURW_PLACEHOLDER,
+  MONAD_MAINNET_USDC,
+} from "@/lib/contracts/addresses";
 import { formatOnchainError } from "@/lib/format-onchain-error";
 import { requireTxSuccess } from "@/lib/require-tx-success";
 import { B0, STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
 
 type PaySide = "USDC" | "EUR";
 type Busy = "approve" | "swap" | null;
+type TokenOption = {
+  symbol: string;
+  address: `0x${string}`;
+  decimals: number;
+};
 
 const SLIPPAGE_OPTIONS = [
   { label: "0.5%", bps: 50 },
@@ -29,8 +40,28 @@ const SLIPPAGE_OPTIONS = [
   { label: "2%", bps: 200 },
 ] as const;
 
+const BASE_TOKEN_OPTIONS: readonly TokenOption[] = [
+  { symbol: "USDC", address: BASE_MAINNET_USDC, decimals: 6 },
+  { symbol: "EURC", address: BASE_MAINNET_EURC, decimals: 6 },
+  { symbol: "WETH", address: "0x4200000000000000000000000000000000000006", decimals: 18 },
+  { symbol: "cbBTC", address: "0xcBb7C0000aB88B473b1f5AFD9ef808440EED33BF", decimals: 8 },
+  { symbol: "USDT", address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", decimals: 6 },
+];
+
+const MONAD_TOKEN_OPTIONS: readonly TokenOption[] = [
+  { symbol: "USDC", address: MONAD_MAINNET_USDC, decimals: 6 },
+  { symbol: "EURW", address: MONAD_MAINNET_EURW_PLACEHOLDER, decimals: 6 },
+  { symbol: "WMON", address: "0x3bd359c1119da7da1d913d1c4d2b7c461115433a", decimals: 18 },
+];
+
 function shortAddr(a: `0x${string}`) {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
+}
+
+function normalizeAddress(raw: string): `0x${string}` | undefined {
+  const t = raw.trim();
+  if (!t || !isAddress(t)) return undefined;
+  return getAddress(t) as `0x${string}`;
 }
 
 export default function SwapPage() {
@@ -62,36 +93,109 @@ export default function SwapPage() {
   const [aggOut, setAggOut] = useState<bigint>(B0);
   const [aggSpender, setAggSpender] = useState<`0x${string}` | null>(null);
   const [aggError, setAggError] = useState<string | null>(null);
+  const [aggSellInput, setAggSellInput] = useState("");
+  const [aggBuyInput, setAggBuyInput] = useState("");
 
-  const payToken = paySide === "USDC" ? usdcAddr : eurAddr;
-  const receiveToken = paySide === "USDC" ? eurAddr : usdcAddr;
-  const payTokenLabel = paySide === "USDC" ? "USDC" : eurStableSymbol;
-  const receiveTokenLabel = paySide === "USDC" ? eurStableSymbol : "USDC";
+  const quickTokens = useMemo(() => {
+    if (chainId === 8453) return BASE_TOKEN_OPTIONS;
+    if (chainId === 143) return MONAD_TOKEN_OPTIONS;
+    return [] as readonly TokenOption[];
+  }, [chainId]);
+
+  useEffect(() => {
+    if (!isAggregatorMode) return;
+    const defaultSell = quickTokens[0]?.address ?? usdcAddr;
+    const defaultBuy = quickTokens[1]?.address ?? eurAddr;
+    setAggSellInput((cur) => (cur.trim().length ? cur : defaultSell ?? ""));
+    setAggBuyInput((cur) => (cur.trim().length ? cur : defaultBuy ?? ""));
+  }, [isAggregatorMode, quickTokens, usdcAddr, eurAddr]);
+
+  const aggSellToken = useMemo(() => normalizeAddress(aggSellInput), [aggSellInput]);
+  const aggBuyToken = useMemo(() => normalizeAddress(aggBuyInput), [aggBuyInput]);
+
+  const arcSellToken = paySide === "USDC" ? usdcAddr : eurAddr;
+  const arcBuyToken = paySide === "USDC" ? eurAddr : usdcAddr;
+
+  const payToken = isArc ? arcSellToken : aggSellToken;
+  const receiveToken = isArc ? arcBuyToken : aggBuyToken;
+
+  const { data: sellDecimalsData } = useReadContract({
+    address: payToken,
+    abi: erc20Abi,
+    functionName: "decimals",
+    chainId,
+    query: { enabled: Boolean(isAggregatorMode && payToken) },
+  });
+  const { data: buyDecimalsData } = useReadContract({
+    address: receiveToken,
+    abi: erc20Abi,
+    functionName: "decimals",
+    chainId,
+    query: { enabled: Boolean(isAggregatorMode && receiveToken) },
+  });
+
+  const { data: sellSymbolData } = useReadContract({
+    address: payToken,
+    abi: erc20Abi,
+    functionName: "symbol",
+    chainId,
+    query: { enabled: Boolean(isAggregatorMode && payToken) },
+  });
+  const { data: buySymbolData } = useReadContract({
+    address: receiveToken,
+    abi: erc20Abi,
+    functionName: "symbol",
+    chainId,
+    query: { enabled: Boolean(isAggregatorMode && receiveToken) },
+  });
+
+  const sellDecimals = isArc ? STABLE_TOKEN_DECIMALS : Number(sellDecimalsData ?? 18);
+  const buyDecimals = isArc ? STABLE_TOKEN_DECIMALS : Number(buyDecimalsData ?? 18);
+
+  const payTokenLabel = isArc
+    ? paySide === "USDC"
+      ? "USDC"
+      : eurStableSymbol
+    : typeof sellSymbolData === "string"
+      ? sellSymbolData
+      : payToken
+        ? shortAddr(payToken)
+        : "Token A";
+
+  const receiveTokenLabel = isArc
+    ? paySide === "USDC"
+      ? eurStableSymbol
+      : "USDC"
+    : typeof buySymbolData === "string"
+      ? buySymbolData
+      : receiveToken
+        ? shortAddr(receiveToken)
+        : "Token B";
 
   const parsedIn = useMemo(() => {
     try {
-      return parseUnits((amountIn || "0").trim(), STABLE_TOKEN_DECIMALS);
+      return parseUnits((amountIn || "0").trim(), sellDecimals);
     } catch {
       return B0;
     }
-  }, [amountIn]);
+  }, [amountIn, sellDecimals]);
 
-  const { data: usdcBal, refetch: refetchUsdc } = useReadContract({
-    address: usdcAddr,
+  const { data: sellBal, refetch: refetchSellBal } = useReadContract({
+    address: payToken,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
     chainId,
-    query: { enabled: Boolean(address && usdcAddr && isSupportedChain) },
+    query: { enabled: Boolean(address && payToken && isSupportedChain) },
   });
 
-  const { data: eurBal, refetch: refetchEur } = useReadContract({
-    address: eurAddr,
+  const { data: buyBal, refetch: refetchBuyBal } = useReadContract({
+    address: receiveToken,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
     chainId,
-    query: { enabled: Boolean(address && eurAddr && isSupportedChain) },
+    query: { enabled: Boolean(address && receiveToken && isSupportedChain) },
   });
 
   const { data: reserveUsdc, refetch: refetchReserveUsdc } = useReadContract({
@@ -135,18 +239,24 @@ export default function SwapPage() {
   );
 
   const canSwap = Boolean(
-    isConnected && isSupportedChain && payToken && receiveToken && parsedIn > B0 && !needApproval,
+    isConnected &&
+      isSupportedChain &&
+      payToken &&
+      receiveToken &&
+      payToken.toLowerCase() !== receiveToken.toLowerCase() &&
+      parsedIn > B0 &&
+      !needApproval,
   );
 
   const refreshAll = useCallback(async () => {
     await Promise.all([
-      refetchUsdc(),
-      refetchEur(),
+      refetchSellBal(),
+      refetchBuyBal(),
       refetchAllowance(),
       refetchReserveUsdc(),
       refetchReserveEur(),
     ]);
-  }, [refetchUsdc, refetchEur, refetchAllowance, refetchReserveUsdc, refetchReserveEur]);
+  }, [refetchSellBal, refetchBuyBal, refetchAllowance, refetchReserveUsdc, refetchReserveEur]);
 
   useEffect(() => {
     let cancelled = false;
@@ -314,10 +424,9 @@ export default function SwapPage() {
                 </Button>
               </div>
               <p className="font-mono text-xs text-zinc-600">
-                Balances: USDC{" "}
-                {usdcBal !== undefined ? formatUnits(usdcBal, STABLE_TOKEN_DECIMALS) : "—"} ·{" "}
-                {eurStableSymbol}{" "}
-                {eurBal !== undefined ? formatUnits(eurBal, STABLE_TOKEN_DECIMALS) : "—"}
+                Balances: {payTokenLabel}{" "}
+                {sellBal !== undefined ? formatUnits(sellBal, sellDecimals) : "—"} · {receiveTokenLabel}{" "}
+                {buyBal !== undefined ? formatUnits(buyBal, buyDecimals) : "—"}
               </p>
             </div>
           ) : (
@@ -338,33 +447,89 @@ export default function SwapPage() {
                 placeholder="0.0"
                 className="min-h-[52px] border-[3px] font-mono text-2xl font-bold"
               />
-              <div className="flex rounded-lg border-[3px] border-black bg-white p-1">
-                <button
-                  type="button"
-                  onClick={() => setPaySide("USDC")}
-                  className={`rounded px-3 py-1 text-xs font-bold ${
-                    paySide === "USDC" ? "bg-black text-white" : "text-zinc-500"
-                  }`}
-                >
-                  USDC
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaySide("EUR")}
-                  className={`rounded px-3 py-1 text-xs font-bold ${
-                    paySide === "EUR" ? "bg-black text-white" : "text-zinc-500"
-                  }`}
-                >
-                  {eurStableSymbol}
-                </button>
-              </div>
+              {isArc ? (
+                <div className="flex rounded-lg border-[3px] border-black bg-white p-1">
+                  <button
+                    type="button"
+                    onClick={() => setPaySide("USDC")}
+                    className={`rounded px-3 py-1 text-xs font-bold ${
+                      paySide === "USDC" ? "bg-black text-white" : "text-zinc-500"
+                    }`}
+                  >
+                    USDC
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaySide("EUR")}
+                    className={`rounded px-3 py-1 text-xs font-bold ${
+                      paySide === "EUR" ? "bg-black text-white" : "text-zinc-500"
+                    }`}
+                  >
+                    {eurStableSymbol}
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
+
+          {!isArc ? (
+            <div className="space-y-2 rounded-lg border border-black/20 bg-white/70 p-3">
+              <Label className="text-[10px]">Aggregator token pair (Base/Monad)</Label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input
+                  value={aggSellInput}
+                  onChange={(e) => setAggSellInput(e.target.value)}
+                  placeholder="Sell token address (0x...)"
+                  spellCheck={false}
+                  className="font-mono text-xs"
+                />
+                <Input
+                  value={aggBuyInput}
+                  onChange={(e) => setAggBuyInput(e.target.value)}
+                  placeholder="Buy token address (0x...)"
+                  spellCheck={false}
+                  className="font-mono text-xs"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {quickTokens.map((t) => (
+                  <button
+                    key={t.address}
+                    type="button"
+                    className="rounded border border-black/30 bg-white px-2 py-1 text-[10px] font-bold"
+                    onClick={() => {
+                      setAggSellInput(t.address);
+                      if (aggBuyInput.trim().toLowerCase() === t.address.toLowerCase()) {
+                        setAggBuyInput(quickTokens.find((x) => x.address !== t.address)?.address ?? "");
+                      }
+                    }}
+                  >
+                    Sell {t.symbol}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {quickTokens.map((t) => (
+                  <button
+                    key={`buy-${t.address}`}
+                    type="button"
+                    className="rounded border border-black/30 bg-white px-2 py-1 text-[10px] font-bold"
+                    onClick={() => setAggBuyInput(t.address)}
+                  >
+                    Buy {t.symbol}
+                  </button>
+                ))}
+              </div>
+              {!payToken || !receiveToken ? (
+                <p className="text-xs text-amber-700">Enter valid token addresses (0x...).</p>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="space-y-2 rounded-xl border-[3px] border-black bg-white p-4">
             <Label className="text-[10px]">You receive (est.)</Label>
             <p className="font-mono text-3xl font-bold tabular-nums">
-              {parsedIn > B0 && estOut > B0 ? formatUnits(estOut, STABLE_TOKEN_DECIMALS) : "—"}
+              {parsedIn > B0 && estOut > B0 ? formatUnits(estOut, buyDecimals) : "—"}
             </p>
             <p className="font-mono text-[11px] text-zinc-600">Token: {receiveTokenLabel}</p>
             {aggError && isAggregatorMode ? (
