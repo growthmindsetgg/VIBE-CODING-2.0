@@ -95,6 +95,9 @@ export default function SwapPage() {
   const [aggError, setAggError] = useState<string | null>(null);
   const [aggSellInput, setAggSellInput] = useState("");
   const [aggBuyInput, setAggBuyInput] = useState("");
+  const [tokenOptions, setTokenOptions] = useState<TokenOption[]>([]);
+  const [tokensLoading, setTokensLoading] = useState(false);
+  const [tokensError, setTokensError] = useState<string | null>(null);
 
   const quickTokens = useMemo(() => {
     if (chainId === 8453) return BASE_TOKEN_OPTIONS;
@@ -102,13 +105,55 @@ export default function SwapPage() {
     return [] as readonly TokenOption[];
   }, [chainId]);
 
+  const displayTokens = useMemo(
+    () => (tokenOptions.length > 0 ? tokenOptions : [...quickTokens]),
+    [tokenOptions, quickTokens],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTokens() {
+      if (!isAggregatorMode) {
+        if (!cancelled) {
+          setTokenOptions([]);
+          setTokensError(null);
+        }
+        return;
+      }
+      setTokensLoading(true);
+      try {
+        const res = await fetch(`/api/swap/tokens?chainId=${chainId}`, { cache: "no-store" });
+        const json = (await res.json()) as { tokens?: Array<{ symbol: string; address: `0x${string}` }> };
+        if (!res.ok) throw new Error((json as { error?: string }).error || "Failed to load tokens");
+        if (cancelled) return;
+        const normalized = (json.tokens ?? []).filter((t) => isAddress(t.address)).map((t) => ({
+          symbol: t.symbol,
+          address: t.address,
+          decimals: 18,
+        }));
+        setTokenOptions(normalized);
+        setTokensError(null);
+      } catch (e) {
+        if (cancelled) return;
+        setTokensError(formatOnchainError(e));
+        setTokenOptions([]);
+      } finally {
+        if (!cancelled) setTokensLoading(false);
+      }
+    }
+    void loadTokens();
+    return () => {
+      cancelled = true;
+    };
+  }, [chainId, isAggregatorMode]);
+
   useEffect(() => {
     if (!isAggregatorMode) return;
-    const defaultSell = quickTokens[0]?.address ?? usdcAddr;
-    const defaultBuy = quickTokens[1]?.address ?? eurAddr;
+    const defaultSell = displayTokens[0]?.address ?? usdcAddr;
+    const defaultBuy = displayTokens[1]?.address ?? eurAddr;
     setAggSellInput((cur) => (cur.trim().length ? cur : defaultSell ?? ""));
     setAggBuyInput((cur) => (cur.trim().length ? cur : defaultBuy ?? ""));
-  }, [isAggregatorMode, quickTokens, usdcAddr, eurAddr]);
+  }, [isAggregatorMode, displayTokens, usdcAddr, eurAddr]);
 
   const aggSellToken = useMemo(() => normalizeAddress(aggSellInput), [aggSellInput]);
   const aggBuyToken = useMemo(() => normalizeAddress(aggBuyInput), [aggBuyInput]);
@@ -476,52 +521,37 @@ export default function SwapPage() {
             <div className="space-y-2 rounded-lg border border-black/20 bg-white/70 p-3">
               <Label className="text-[10px]">Aggregator token pair (Base/Monad)</Label>
               <div className="grid gap-2 sm:grid-cols-2">
-                <Input
+                <select
                   value={aggSellInput}
                   onChange={(e) => setAggSellInput(e.target.value)}
-                  placeholder="Sell token address (0x...)"
-                  spellCheck={false}
-                  className="font-mono text-xs"
-                />
-                <Input
+                  className="h-10 rounded-md border-2 border-black bg-white px-2 font-mono text-xs"
+                >
+                  {!aggSellInput ? <option value="">Select sell token</option> : null}
+                  {displayTokens.map((t) => (
+                    <option key={`sell-${t.address}`} value={t.address}>
+                      {t.symbol} · {shortAddr(t.address)}
+                    </option>
+                  ))}
+                </select>
+                <select
                   value={aggBuyInput}
                   onChange={(e) => setAggBuyInput(e.target.value)}
-                  placeholder="Buy token address (0x...)"
-                  spellCheck={false}
-                  className="font-mono text-xs"
-                />
+                  className="h-10 rounded-md border-2 border-black bg-white px-2 font-mono text-xs"
+                >
+                  {!aggBuyInput ? <option value="">Select buy token</option> : null}
+                  {displayTokens.map((t) => (
+                    <option key={`buy-${t.address}`} value={t.address}>
+                      {t.symbol} · {shortAddr(t.address)}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {quickTokens.map((t) => (
-                  <button
-                    key={t.address}
-                    type="button"
-                    className="rounded border border-black/30 bg-white px-2 py-1 text-[10px] font-bold"
-                    onClick={() => {
-                      setAggSellInput(t.address);
-                      if (aggBuyInput.trim().toLowerCase() === t.address.toLowerCase()) {
-                        setAggBuyInput(quickTokens.find((x) => x.address !== t.address)?.address ?? "");
-                      }
-                    }}
-                  >
-                    Sell {t.symbol}
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {quickTokens.map((t) => (
-                  <button
-                    key={`buy-${t.address}`}
-                    type="button"
-                    className="rounded border border-black/30 bg-white px-2 py-1 text-[10px] font-bold"
-                    onClick={() => setAggBuyInput(t.address)}
-                  >
-                    Buy {t.symbol}
-                  </button>
-                ))}
-              </div>
+              {tokensLoading ? <p className="text-xs text-zinc-600">Loading top liquidity tokens…</p> : null}
+              {tokensError ? <p className="text-xs text-amber-700">Token list fallback: {tokensError}</p> : null}
               {!payToken || !receiveToken ? (
-                <p className="text-xs text-amber-700">Enter valid token addresses (0x...).</p>
+                <p className="text-xs text-amber-700">Select both sell and buy tokens.</p>
+              ) : payToken.toLowerCase() === receiveToken.toLowerCase() ? (
+                <p className="text-xs text-amber-700">Choose two different tokens.</p>
               ) : null}
             </div>
           ) : null}

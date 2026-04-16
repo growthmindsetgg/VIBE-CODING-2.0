@@ -19,12 +19,6 @@ export type ZeroExQuote = {
   };
 };
 
-function baseUrlForChain(chainId: number): string | null {
-  if (chainId === 8453) return "https://base.api.0x.org";
-  if (chainId === 143) return "https://monad.api.0x.org";
-  return null;
-}
-
 function toBigInt(value: unknown): bigint {
   if (typeof value === "bigint") return value;
   if (typeof value === "number") return BigInt(value);
@@ -48,26 +42,23 @@ function parseAllowanceTarget(payload: Record<string, unknown>): Address | undef
   return undefined;
 }
 
-async function call0x<T>(chainId: number, path: string, params: URLSearchParams): Promise<T> {
-  const base = baseUrlForChain(chainId);
-  if (!base) throw new Error("0x aggregator is enabled only on Base and Monad.");
-
-  const headers: Record<string, string> = { "0x-version": "v2" };
-  const apiKey = process.env.NEXT_PUBLIC_ZEROX_API_KEY?.trim();
-  if (apiKey) headers["0x-api-key"] = apiKey;
-
-  const res = await fetch(`${base}${path}?${params.toString()}`, {
+async function call0x<T>(action: "price" | "quote", params: URLSearchParams): Promise<T> {
+  const url = `/api/swap?action=${action}&${params.toString()}`;
+  const res = await fetch(url, {
     method: "GET",
-    headers,
     cache: "no-store",
   });
-
+  const payload = await res.json();
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`0x API error (${res.status}): ${text || res.statusText}`);
+    const details =
+      typeof payload?.details === "string"
+        ? payload.details
+        : typeof payload?.error === "string"
+          ? payload.error
+          : res.statusText;
+    throw new Error(details || `Aggregator request failed (${res.status})`);
   }
-
-  return (await res.json()) as T;
+  return payload as T;
 }
 
 export async function fetchZeroExPrice(args: {
@@ -85,11 +76,7 @@ export async function fetchZeroExPrice(args: {
     taker: args.taker,
   });
 
-  const payload = await call0x<Record<string, unknown>>(
-    args.chainId,
-    "/swap/allowance-holder/price",
-    params,
-  );
+  const payload = await call0x<Record<string, unknown>>("price", params);
 
   return {
     sellAmount: toBigInt(payload.sellAmount),
@@ -115,11 +102,7 @@ export async function fetchZeroExQuote(args: {
     slippageBps: String(args.slippageBps),
   });
 
-  const payload = await call0x<Record<string, unknown>>(
-    args.chainId,
-    "/swap/allowance-holder/quote",
-    params,
-  );
+  const payload = await call0x<Record<string, unknown>>("quote", params);
 
   const tx = payload.transaction as Record<string, unknown> | undefined;
   const allowanceTarget = parseAllowanceTarget(payload);
