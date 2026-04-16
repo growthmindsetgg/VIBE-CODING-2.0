@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowDown, Check, Copy, ExternalLink, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, Copy, ExternalLink, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { erc20Abi, formatUnits, isAddress, maxUint256, parseUnits, zeroAddress } from "viem";
-import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
+import { erc20Abi, formatUnits, maxUint256, parseUnits } from "viem";
+import { useAccount, useConfig, useReadContract, useSendTransaction, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
+
 import { WrongNetworkBanner } from "@/components/stable-vault/wrong-network-banner";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
 import { Button } from "@/components/ui/button";
@@ -14,31 +14,20 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
-import { getStableVaultChainById } from "@/lib/chains";
+import { fetchZeroExPrice, fetchZeroExQuote } from "@/lib/aggregators/zerox";
+import { arcTestnet, getStableVaultChainById } from "@/lib/chains";
+import { formatOnchainError } from "@/lib/format-onchain-error";
 import { requireTxSuccess } from "@/lib/require-tx-success";
 import { B0, STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
-import {
-  poolSpotEurcPerUsdc,
-  refEurcPerUsdc,
-  roughEurcShortfallForPeg,
-  skewVsReferencePercent,
-} from "@/lib/stable-swap/fx-hint";
-import { quoteEurcToUsdc, quoteUsdcToEurc } from "@/lib/stable-swap/quote";
-import { cn } from "@/lib/utils";
 
-/** Pay with USDC or the euro-side stable (EURC / EURW). */
 type PaySide = "USDC" | "EUR";
+type Busy = "approve" | "swap" | null;
 
-const POLL_MS = 4000;
-const B10K = BigInt(10_000);
 const SLIPPAGE_OPTIONS = [
   { label: "0.5%", bps: 50 },
   { label: "1%", bps: 100 },
-  { label: "3%", bps: 300 },
+  { label: "2%", bps: 200 },
 ] as const;
-
-const innerBrutal =
-  "rounded-xl border-[3px] border-black bg-white p-4 shadow-[4px_4px_0_0_#000] text-zinc-900";
 
 function shortAddr(a: `0x${string}`) {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -48,10 +37,12 @@ export default function SwapPage() {
   const config = useConfig();
   const { address, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
+  const { sendTransactionAsync } = useSendTransaction();
+
   const {
     vault,
     usdc: usdcAddr,
-    eurc: eurcAddr,
+    eurc: eurAddr,
     chainId,
     isSupportedChain,
     explorerBaseUrl,
@@ -59,194 +50,152 @@ export default function SwapPage() {
   } = useStableVaultAddresses();
 
   const chainName = getStableVaultChainById(chainId)?.name ?? "Network";
+  const isArc = chainId === arcTestnet.id;
+  const isAggregatorMode = isSupportedChain && !isArc;
 
   const [paySide, setPaySide] = useState<PaySide>("USDC");
-  const [amountIn, setAmountIn] = useState("");
-  const [customRecipient, setCustomRecipient] = useState(false);
-  const [recipient, setRecipient] = useState("");
+  const [amountIn, setAmountIn] = useState("1");
   const [slippageBps, setSlippageBps] = useState<number>(100);
-  const [busy, setBusy] = useState<"approve" | "swap" | "transfer" | null>(null);
+  const [busy, setBusy] = useState<Busy>(null);
   const [lastTxHash, setLastTxHash] = useState<`0x${string}` | null>(null);
   const [copied, setCopied] = useState(false);
+  const [aggOut, setAggOut] = useState<bigint>(B0);
+  const [aggSpender, setAggSpender] = useState<`0x${string}` | null>(null);
+  const [aggError, setAggError] = useState<string | null>(null);
 
-  const receiveSide: PaySide = paySide === "USDC" ? "EUR" : "USDC";
+  const payToken = paySide === "USDC" ? usdcAddr : eurAddr;
+  const receiveToken = paySide === "USDC" ? eurAddr : usdcAddr;
   const payTokenLabel = paySide === "USDC" ? "USDC" : eurStableSymbol;
-  const receiveTokenLabel = receiveSide === "USDC" ? "USDC" : eurStableSymbol;
-
-  const poolEnabled = Boolean(vault && isSupportedChain && usdcAddr && eurcAddr);
-
-  const { data: reserveUsdc, refetch: refetchReserves } = useReadContract({
-    address: vault ?? undefined,
-    abi: stableSwapMicroVaultAbi,
-    functionName: "reserveUsdc",
-    chainId,
-    query: { enabled: poolEnabled, refetchInterval: POLL_MS },
-  });
-
-  const { data: reserveEurc, refetch: refetchReservesE } = useReadContract({
-    address: vault ?? undefined,
-    abi: stableSwapMicroVaultAbi,
-    functionName: "reserveEurc",
-    chainId,
-    query: { enabled: poolEnabled, refetchInterval: POLL_MS },
-  });
-
-  const { data: totalLp, refetch: refetchLp } = useReadContract({
-    address: vault ?? undefined,
-    abi: stableSwapMicroVaultAbi,
-    functionName: "totalLp",
-    chainId,
-    query: { enabled: poolEnabled, refetchInterval: POLL_MS },
-  });
-
-  const { data: usdcBal, refetch: refetchUsdcBal } = useReadContract({
-    address: usdcAddr,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: address ? [address] : undefined,
-    chainId,
-    query: { enabled: Boolean(usdcAddr && address && isSupportedChain), refetchInterval: POLL_MS },
-  });
-
-  const { data: eurcBal, refetch: refetchEurcBal } = useReadContract({
-    address: eurcAddr,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: address ? [address] : undefined,
-    chainId,
-    query: { enabled: Boolean(eurcAddr && address && isSupportedChain), refetchInterval: POLL_MS },
-  });
-
-  const payToken = paySide === "USDC" ? usdcAddr : eurcAddr;
-  const payBal = paySide === "USDC" ? usdcBal : eurcBal;
-
-  const { data: allowance, refetch: refetchAllowance } = useReadContract({
-    address: payToken,
-    abi: erc20Abi,
-    functionName: "allowance",
-    args: address && vault && payToken ? [address, vault] : undefined,
-    chainId,
-    query: { enabled: Boolean(address && vault && payToken && isSupportedChain), refetchInterval: POLL_MS },
-  });
-
-  const rU = reserveUsdc ?? B0;
-  const rE = reserveEurc ?? B0;
-  const tLp = totalLp ?? B0;
+  const receiveTokenLabel = paySide === "USDC" ? eurStableSymbol : "USDC";
 
   const parsedIn = useMemo(() => {
     try {
-      return parseUnits(amountIn.trim() || "0", STABLE_TOKEN_DECIMALS);
+      return parseUnits((amountIn || "0").trim(), STABLE_TOKEN_DECIMALS);
     } catch {
       return B0;
     }
   }, [amountIn]);
 
-  const ammReady = Boolean(vault && rU > B0 && rE > B0 && tLp > B0);
+  const { data: usdcBal, refetch: refetchUsdc } = useReadContract({
+    address: usdcAddr,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    chainId,
+    query: { enabled: Boolean(address && usdcAddr && isSupportedChain) },
+  });
 
-  const canQuoteAmm = Boolean(ammReady && parsedIn > B0);
+  const { data: eurBal, refetch: refetchEur } = useReadContract({
+    address: eurAddr,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    chainId,
+    query: { enabled: Boolean(address && eurAddr && isSupportedChain) },
+  });
 
-  const quoteOut = useMemo(() => {
-    if (!canQuoteAmm) return B0;
+  const { data: reserveUsdc, refetch: refetchReserveUsdc } = useReadContract({
+    address: vault ?? undefined,
+    abi: stableSwapMicroVaultAbi,
+    functionName: "reserveUsdc",
+    chainId,
+    query: { enabled: Boolean(isArc && vault) },
+  });
+  const { data: reserveEurc, refetch: refetchReserveEur } = useReadContract({
+    address: vault ?? undefined,
+    abi: stableSwapMicroVaultAbi,
+    functionName: "reserveEurc",
+    chainId,
+    query: { enabled: Boolean(isArc && vault) },
+  });
+
+  const spender = isArc ? vault : aggSpender;
+
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
+    address: payToken,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: address && payToken && spender ? [address, spender] : undefined,
+    chainId,
+    query: { enabled: Boolean(address && payToken && spender && isSupportedChain) },
+  });
+
+  const arcQuoteOut = useMemo(() => {
+    if (!isArc || !reserveUsdc || !reserveEurc || parsedIn <= B0) return B0;
     return paySide === "USDC"
-      ? quoteUsdcToEurc(rU, rE, parsedIn)
-      : quoteEurcToUsdc(rU, rE, parsedIn);
-  }, [canQuoteAmm, rU, rE, parsedIn, paySide]);
+      ? (reserveEurc * ((parsedIn * BigInt(9995)) / BigInt(10000))) /
+          (reserveUsdc + (parsedIn * BigInt(9995)) / BigInt(10000))
+      : (reserveUsdc * ((parsedIn * BigInt(9995)) / BigInt(10000))) /
+          (reserveEurc + (parsedIn * BigInt(9995)) / BigInt(10000));
+  }, [isArc, reserveUsdc, reserveEurc, parsedIn, paySide]);
 
-  const idealOut = useMemo(() => {
-    if (!vault || rU <= B0 || rE <= B0 || parsedIn <= B0) return B0;
-    return paySide === "USDC" ? (parsedIn * rE) / rU : (parsedIn * rU) / rE;
-  }, [vault, rU, rE, parsedIn, paySide]);
-
-  const priceImpactBps = useMemo(() => {
-    if (!ammReady || idealOut <= B0 || quoteOut <= B0) return 0;
-    const bps = Number(((idealOut - quoteOut) * B10K) / idealOut);
-    return Math.min(99_99, Math.max(0, bps));
-  }, [ammReady, idealOut, quoteOut]);
-
-  const estOut = ammReady ? quoteOut : B0;
-
-  const minOut = useMemo(() => {
-    if (quoteOut <= B0) return B0;
-    const slip = BigInt(slippageBps);
-    return (quoteOut * (B10K - slip)) / B10K;
-  }, [quoteOut, slippageBps]);
-
+  const estOut = isArc ? arcQuoteOut : aggOut;
   const needApproval = Boolean(
-    ammReady &&
-      vault &&
-      payToken &&
-      address &&
-      parsedIn > B0 &&
-      (allowance === undefined || (allowance as bigint) < parsedIn),
+    isConnected && parsedIn > B0 && spender && (allowance === undefined || allowance < parsedIn),
   );
 
-  const recipientValid =
-    recipient.trim() !== "" && isAddress(recipient.trim()) && recipient.trim().toLowerCase() !== zeroAddress;
-
-  const transferDestination = useMemo(() => {
-    if (customRecipient) {
-      const r = recipient.trim();
-      if (!r || !isAddress(r) || r.toLowerCase() === zeroAddress) return undefined;
-      return r as `0x${string}`;
-    }
-    return address;
-  }, [customRecipient, recipient, address]);
-
-  const canAmmSwap = Boolean(
-    ammReady && vault && parsedIn > B0 && !needApproval && isConnected && isSupportedChain,
+  const canSwap = Boolean(
+    isConnected && isSupportedChain && payToken && receiveToken && parsedIn > B0 && !needApproval,
   );
 
-  const canTransfer = Boolean(
-    isConnected &&
-      isSupportedChain &&
-      transferDestination !== undefined &&
-      parsedIn > B0 &&
-      payToken,
-  );
-
-  const refEurcPerUsdcHint = refEurcPerUsdc();
-  const poolSpotEurcPerUsdc_ = ammReady && rU > B0 ? poolSpotEurcPerUsdc(rU, rE) : null;
-  const fxSkewPct = ammReady ? skewVsReferencePercent(rU, rE, refEurcPerUsdcHint) : null;
-  const eurcShortfallHint = ammReady ? roughEurcShortfallForPeg(rU, rE, refEurcPerUsdcHint) : B0;
-
-  function flip() {
-    setPaySide((s) => (s === "USDC" ? "EUR" : "USDC"));
-    setAmountIn("");
-    setLastTxHash(null);
-  }
-
-  function setMax() {
-    if (payBal === undefined || payBal === null) return;
-    const b = payBal as bigint;
-    if (b <= B0) return;
-    setAmountIn(formatUnits(b, STABLE_TOKEN_DECIMALS));
-  }
-
-  async function refreshAll() {
+  const refreshAll = useCallback(async () => {
     await Promise.all([
-      refetchUsdcBal(),
-      refetchEurcBal(),
-      refetchReserves(),
-      refetchReservesE(),
-      refetchLp(),
+      refetchUsdc(),
+      refetchEur(),
       refetchAllowance(),
+      refetchReserveUsdc(),
+      refetchReserveEur(),
     ]);
-  }
+  }, [refetchUsdc, refetchEur, refetchAllowance, refetchReserveUsdc, refetchReserveEur]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function runPrice() {
+      if (!isAggregatorMode || !address || !payToken || !receiveToken || parsedIn <= B0) {
+        if (!cancelled) {
+          setAggOut(B0);
+          setAggSpender(null);
+          setAggError(null);
+        }
+        return;
+      }
+
+      try {
+        const price = await fetchZeroExPrice({
+          chainId,
+          sellToken: payToken,
+          buyToken: receiveToken,
+          sellAmount: parsedIn,
+          taker: address,
+        });
+        if (cancelled) return;
+        setAggOut(price.buyAmount);
+        setAggSpender(price.allowanceTarget ?? null);
+        setAggError(null);
+      } catch (e) {
+        if (cancelled) return;
+        setAggOut(B0);
+        setAggSpender(null);
+        setAggError(formatOnchainError(e));
+      }
+    }
+
+    void runPrice();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAggregatorMode, address, payToken, receiveToken, parsedIn, chainId]);
 
   async function copyAddress() {
     if (!address) return;
     await navigator.clipboard.writeText(address);
     setCopied(true);
-    toast.success("Address copied");
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), 1500);
   }
 
   async function onApprove() {
-    if (!vault || !payToken || !address) return;
-    if (vault.toLowerCase() === zeroAddress.toLowerCase()) {
-      toast.error("Set a valid vault address before approving.");
-      return;
-    }
+    if (!payToken || !spender || !address) return;
     setBusy("approve");
     setLastTxHash(null);
     try {
@@ -255,88 +204,76 @@ export default function SwapPage() {
         address: payToken,
         abi: erc20Abi,
         functionName: "approve",
-        args: [vault, maxUint256],
+        args: [spender, maxUint256],
       });
-      const approveRc = await waitForTransactionReceipt(config, { hash });
-      requireTxSuccess(approveRc, "Approval reverted.");
+      const rc = await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(rc, "Approval reverted.");
       setLastTxHash(hash);
-      toast.success("Token approved", { description: shortAddr(hash) });
+      toast.success("Approval confirmed", { description: shortAddr(hash) });
       await refetchAllowance();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Approve failed");
+      toast.error(formatOnchainError(e));
     } finally {
       setBusy(null);
     }
   }
 
   async function onSwap() {
-    if (!vault || !payToken) return;
+    if (!address || !payToken || !receiveToken) return;
     setBusy("swap");
     setLastTxHash(null);
+
     try {
-      const hash = await writeContractAsync({
-        chainId,
-        address: vault,
-        abi: stableSwapMicroVaultAbi,
-        functionName: paySide === "USDC" ? "swapUsdcForEurc" : "swapEurcForUsdc",
-        args: [parsedIn, minOut],
-      });
-      const swapRc = await waitForTransactionReceipt(config, { hash });
-      requireTxSuccess(swapRc, "Swap reverted — check slippage, pool liquidity, and the block explorer.");
+      let hash: `0x${string}`;
+      if (isArc) {
+        if (!vault) throw new Error("Vault not configured on Arc.");
+        const minOut = (arcQuoteOut * BigInt(10_000 - slippageBps)) / BigInt(10_000);
+        hash = await writeContractAsync({
+          chainId,
+          address: vault,
+          abi: stableSwapMicroVaultAbi,
+          functionName: paySide === "USDC" ? "swapUsdcForEurc" : "swapEurcForUsdc",
+          args: [parsedIn, minOut],
+        });
+      } else {
+        const quote = await fetchZeroExQuote({
+          chainId,
+          sellToken: payToken,
+          buyToken: receiveToken,
+          sellAmount: parsedIn,
+          taker: address,
+          slippageBps,
+        });
+
+        hash = await sendTransactionAsync({
+          chainId,
+          to: quote.transaction.to,
+          data: quote.transaction.data,
+          value: quote.transaction.value,
+          gas: quote.transaction.gas,
+          gasPrice: quote.transaction.gasPrice,
+        });
+      }
+
+      const rc = await waitForTransactionReceipt(config, { hash });
+      requireTxSuccess(rc, "Swap reverted.");
       setLastTxHash(hash);
+      setAmountIn("");
+      await refreshAll();
       toast.success("Swap confirmed", {
         description: (
           <a
             href={`${explorerBaseUrl}/tx/${hash}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[#5c16c5] underline"
+            className="inline-flex items-center gap-1 underline"
           >
-            View on explorer <ExternalLink className="size-3" />
+            View tx <ExternalLink className="size-3" />
           </a>
         ),
       });
-      setAmountIn("");
-      await refreshAll();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Swap failed");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function onTransfer() {
-    if (!payToken || !transferDestination) return;
-    const to = transferDestination;
-    setBusy("transfer");
-    setLastTxHash(null);
-    try {
-      const hash = await writeContractAsync({
-        chainId,
-        address: payToken,
-        abi: erc20Abi,
-        functionName: "transfer",
-        args: [to, parsedIn],
-      });
-      const trRc = await waitForTransactionReceipt(config, { hash });
-      requireTxSuccess(trRc, "Transfer reverted.");
-      setLastTxHash(hash);
-      toast.success(`${payTokenLabel} transferred (same token — not a cross-asset swap)`, {
-        description: (
-          <a
-            href={`${explorerBaseUrl}/tx/${hash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[#5c16c5] underline"
-          >
-            View on explorer <ExternalLink className="size-3" />
-          </a>
-        ),
-      });
-      setAmountIn("");
-      await refreshAll();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Transfer failed");
+      toast.error(formatOnchainError(e));
     } finally {
       setBusy(null);
     }
@@ -347,418 +284,144 @@ export default function SwapPage() {
       {isConnected && !isSupportedChain ? (
         <WrongNetworkBanner className="rounded-xl border border-amber-600/60 bg-amber-50 px-4 py-3 text-sm text-amber-950" />
       ) : null}
-      <header className="flex flex-wrap items-end justify-between gap-4">
+
+      <header className="flex items-end justify-between gap-3">
         <div>
-          <p className="font-mono text-xs font-bold uppercase tracking-widest text-[#5c16c5]">Vibefunds / Swap</p>
+          <p className="font-mono text-xs font-bold uppercase tracking-widest text-[#5c16c5]">
+            Vibefunds / Swap
+          </p>
           <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl font-bold uppercase tracking-tight text-black">
             Swap
           </h1>
           <p className="mt-2 font-mono text-xs text-zinc-600">
-            {chainName}
-            {usdcAddr && eurcAddr ? (
-              <>
-                {" "}
-                · {usdcAddr.slice(0, 10)}… · {eurcAddr.slice(0, 10)}…
-              </>
-            ) : (
-              " · connect on Arc, Base, or Monad"
-            )}
+            {chainName} · {isArc ? "Arc Vault AMM" : "0x Aggregator Route"}
           </p>
         </div>
-        <Button type="button" variant="brutalOutline" size="sm" onClick={() => refreshAll()} className="font-mono text-xs uppercase">
-          <RefreshCw className="size-3.5" aria-hidden />
-          Refresh
+        <Button type="button" variant="brutalOutline" size="sm" onClick={() => void refreshAll()}>
+          <RefreshCw className="size-3.5" aria-hidden /> Refresh
         </Button>
       </header>
 
-      {isConnected && address ? (
-        <Card variant="brutal">
-          <CardContent className="pt-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <Label className="text-[10px] text-zinc-500">Connected</Label>
-                <p className="mt-1 font-mono text-sm font-bold text-black">{shortAddr(address)}</p>
+      <Card variant="brutal">
+        <CardContent className="pt-6">
+          {isConnected && address ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="font-mono text-sm font-bold">{shortAddr(address)}</p>
+                <Button type="button" variant="brutalOutline" size="sm" onClick={copyAddress}>
+                  {copied ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}{" "}
+                  {copied ? "Copied" : "Copy"}
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="brutalOutline"
-                size="sm"
-                onClick={copyAddress}
-                className="font-mono text-[10px] uppercase"
-              >
-                {copied ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
-                {copied ? "Copied" : "Copy"}
-              </Button>
+              <p className="font-mono text-xs text-zinc-600">
+                Balances: USDC{" "}
+                {usdcBal !== undefined ? formatUnits(usdcBal, STABLE_TOKEN_DECIMALS) : "—"} ·{" "}
+                {eurStableSymbol}{" "}
+                {eurBal !== undefined ? formatUnits(eurBal, STABLE_TOKEN_DECIMALS) : "—"}
+              </p>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-4 border-t-[3px] border-black pt-4">
-              <div>
-                <Label className="text-[10px]">USDC</Label>
-                <p className="mt-1 font-mono text-lg font-bold tabular-nums text-black">
-                  {usdcBal !== undefined ? formatUnits(usdcBal as bigint, STABLE_TOKEN_DECIMALS) : "—"}
-                </p>
-              </div>
-              <div>
-                <Label className="text-[10px]">{eurStableSymbol}</Label>
-                <p className="mt-1 font-mono text-lg font-bold tabular-nums text-black">
-                  {eurcBal !== undefined ? formatUnits(eurcBal as bigint, STABLE_TOKEN_DECIMALS) : "—"}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card variant="brutal" className="border-dashed border-zinc-400">
-          <CardContent className="py-8 text-center">
-            <p className="text-sm font-medium text-zinc-700">Connect your wallet to swap</p>
-            <p className="mt-1 text-xs text-zinc-500">Use the connect control in the header</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {!ammReady && (
-        <Card variant="brutal" className="border-amber-600/60 bg-amber-50/90">
-          <CardContent className="pt-6 text-sm leading-relaxed text-zinc-800">
-            <strong className="text-black">
-              USDC ↔ {eurStableSymbol} uses the vault pool.
-            </strong>{" "}
-            Only StableSwapMicroVault can trade one stable for the other.{" "}
-            {!vault ? (
-              <>
-                Set the vault env for this chain (see Pool page) or use{" "}
-                <Link href="/liquidity" className="font-bold text-[#5c16c5] underline underline-offset-2">
-                  Pool
-                </Link>{" "}
-                to add liquidity.
-              </>
-            ) : (
-              <>
-                Vault is set —{" "}
-                <Link href="/liquidity" className="font-bold text-[#5c16c5] underline underline-offset-2">
-                  add USDC + {eurStableSymbol} liquidity
-                </Link>{" "}
-                to enable swaps.
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {ammReady && (
-        <div className="rounded-full border-[2px] border-black bg-cyan-100 px-4 py-2 text-center font-mono text-[10px] font-bold uppercase tracking-wide text-zinc-800 shadow-[3px_3px_0_0_#000]">
-          Pool connected — 0.05% fee — slippage applies
-        </div>
-      )}
-
-      {ammReady && (
-        <Card variant="brutal" className="border-sky-700/40 bg-sky-50/95">
-          <CardContent className="space-y-3 pt-6 text-sm leading-relaxed text-zinc-800">
-            <p className="font-[family-name:var(--font-display)] text-base font-bold text-black">
-              Why isn&apos;t this ~0.92 {eurStableSymbol} per USDC?
-            </p>
-            <p className="text-xs">
-              This vault uses a <strong>constant-product AMM</strong> (like Uniswap v2): your execution price comes only
-              from <strong>reserveUSDC</strong> and <strong>reserve{eurStableSymbol}</strong>. The deploy-time{" "}
-              <span className="font-mono text-[11px]">usdPerEurc1e18</span> is used for the owner <strong>nudge</strong>{" "}
-              toward equal <em>USD</em> weight — it does <strong>not</strong> rewrite swap quotes.
-            </p>
-            <p className="text-xs">
-              A <strong>market oracle</strong> (Chainlink, Pyth, DEX TWAP, etc.) is only useful if you build pricing
-              around it — e.g. oracle-stabilized stableswap, limit orders, or capped deviation. That is a{" "}
-              <strong>different contract</strong> than this micro vault.
-            </p>
-            <ul className="list-inside list-disc space-y-1.5 border-t-[2px] border-black/10 pt-3 font-mono text-[11px] text-zinc-700">
-              <li>
-                UI reference (set <span className="font-mono">NEXT_PUBLIC_FX_HINT_USD_PER_EUR</span>, default 1.08): ~
-                {refEurcPerUsdcHint.toFixed(4)} EURC per 1 USDC
-              </li>
-              <li>
-                Pool marginal spot:{" "}
-                {poolSpotEurcPerUsdc_ !== null ? `${poolSpotEurcPerUsdc_.toFixed(6)} ${eurStableSymbol} per USDC` : "—"}
-              </li>
-              {fxSkewPct !== null && fxSkewPct > 0.5 && (
-                <li className="font-sans text-amber-900">
-                  Pool implied rate is ~{fxSkewPct.toFixed(1)}% away from that hint — reserves are skewed (e.g. lots of
-                  USDC, little {eurStableSymbol}), so small trades still show high impact.
-                </li>
-              )}
-              {eurcShortfallHint > B0 && (
-                <li>
-                  Order-of-magnitude {eurStableSymbol} to move marginal spot toward the hint (add via Pool, then
-                  recheck): ~{formatUnits(eurcShortfallHint, STABLE_TOKEN_DECIMALS)} {eurStableSymbol} vs current{" "}
-                  {formatUnits(rE, STABLE_TOKEN_DECIMALS)} {eurStableSymbol} / {formatUnits(rU, STABLE_TOKEN_DECIMALS)} USDC
-                </li>
-              )}
-            </ul>
-            <p className="text-xs text-zinc-600">
-              <strong>Larger liquidity</strong> reduces slippage for a given size, but the <strong>ratio</strong> of the
-              two reserves sets the price. Seed near <strong>equal USD value</strong> on both sides at your target FX.
-            </p>
-            <Button asChild variant="brutalOutline" size="sm" className="font-mono text-[10px] uppercase">
-              <Link href="/liquidity">Add / rebalance liquidity</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <p className="text-sm text-zinc-600">Connect wallet to swap.</p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card variant="brutal">
         <CardContent className="space-y-4 pt-6">
-          {ammReady && (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <Label className="text-[10px]">Slippage</Label>
-              <div className="flex flex-wrap gap-2">
-                {SLIPPAGE_OPTIONS.map((o) => (
-                  <button
-                    key={o.bps}
-                    type="button"
-                    onClick={() => setSlippageBps(o.bps)}
-                    className={cn(
-                      "rounded-lg border-[2px] border-black px-3 py-1.5 font-mono text-[10px] font-bold uppercase shadow-[2px_2px_0_0_#000] transition-transform",
-                      slippageBps === o.bps
-                        ? "bg-[#9146FF] text-white"
-                        : "bg-white text-zinc-800 hover:-translate-x-px hover:-translate-y-px hover:shadow-[3px_3px_0_0_#000]",
-                    )}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className={innerBrutal}>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-bold text-zinc-700">You pay</span>
-              {payBal !== undefined && (
-                <span className="font-mono text-[10px] font-bold text-zinc-500">
-                  Balance {formatUnits(payBal as bigint, STABLE_TOKEN_DECIMALS)}
-                </span>
-              )}
-            </div>
-            <div className="mt-3 flex flex-wrap items-stretch gap-2 sm:flex-nowrap">
+          <div className="space-y-2">
+            <Label className="text-[10px]">You pay</Label>
+            <div className="flex gap-2">
               <Input
                 value={amountIn}
                 onChange={(e) => setAmountIn(e.target.value)}
                 inputMode="decimal"
                 placeholder="0.0"
-                className="min-h-[52px] min-w-0 flex-1 border-[3px] font-mono text-2xl font-bold shadow-[4px_4px_0_0_#000]"
+                className="min-h-[52px] border-[3px] font-mono text-2xl font-bold"
               />
-              <div className="flex shrink-0 gap-2">
-                <Button
+              <div className="flex rounded-lg border-[3px] border-black bg-white p-1">
+                <button
                   type="button"
-                  variant="brutalOutline"
-                  size="sm"
-                  onClick={setMax}
-                  disabled={!isConnected || payBal === undefined}
-                  className="h-[52px] font-mono text-[10px] uppercase"
+                  onClick={() => setPaySide("USDC")}
+                  className={`rounded px-3 py-1 text-xs font-bold ${
+                    paySide === "USDC" ? "bg-black text-white" : "text-zinc-500"
+                  }`}
                 >
-                  Max
-                </Button>
-                <div className="flex h-[52px] rounded-lg border-[3px] border-black bg-[#fafaf8] p-0.5 shadow-[4px_4px_0_0_#000]">
-                  <button
-                    type="button"
-                    onClick={() => setPaySide("USDC")}
-                    className={cn(
-                      "rounded-md px-3 font-mono text-[10px] font-bold uppercase transition-colors",
-                      paySide === "USDC" ? "bg-black text-white" : "text-zinc-500 hover:text-black",
-                    )}
-                  >
-                    USDC
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaySide("EUR")}
-                    className={cn(
-                      "rounded-md px-3 font-mono text-[10px] font-bold uppercase transition-colors",
-                      paySide === "EUR" ? "bg-black text-white" : "text-zinc-500 hover:text-black",
-                    )}
-                  >
-                    {eurStableSymbol}
-                  </button>
-                </div>
+                  USDC
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaySide("EUR")}
+                  className={`rounded px-3 py-1 text-xs font-bold ${
+                    paySide === "EUR" ? "bg-black text-white" : "text-zinc-500"
+                  }`}
+                >
+                  {eurStableSymbol}
+                </button>
               </div>
             </div>
           </div>
 
-          <div className="flex justify-center">
-            <button
+          <div className="space-y-2 rounded-xl border-[3px] border-black bg-white p-4">
+            <Label className="text-[10px]">You receive (est.)</Label>
+            <p className="font-mono text-3xl font-bold tabular-nums">
+              {parsedIn > B0 && estOut > B0 ? formatUnits(estOut, STABLE_TOKEN_DECIMALS) : "—"}
+            </p>
+            <p className="font-mono text-[11px] text-zinc-600">Token: {receiveTokenLabel}</p>
+            {aggError && isAggregatorMode ? (
+              <p className="text-xs text-amber-700">Quote: {aggError}</p>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {SLIPPAGE_OPTIONS.map((o) => (
+              <button
+                key={o.bps}
+                type="button"
+                onClick={() => setSlippageBps(o.bps)}
+                className={`rounded-lg border-[2px] border-black px-3 py-1.5 text-[10px] font-bold uppercase ${
+                  slippageBps === o.bps ? "bg-[#9146FF] text-white" : "bg-white"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+
+          {needApproval && parsedIn > B0 ? (
+            <Button
               type="button"
-              onClick={flip}
-              className="rounded-full border-[3px] border-black bg-white p-3 text-black shadow-[4px_4px_0_0_#000] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0_0_#000]"
-              aria-label="Flip direction"
+              variant="brutalOutline"
+              className="w-full"
+              disabled={busy !== null}
+              onClick={onApprove}
             >
-              <ArrowDown className="size-5" />
-            </button>
-          </div>
+              {busy === "approve" ? "Approving..." : `Approve ${payTokenLabel}`}
+            </Button>
+          ) : null}
 
-          <div className={innerBrutal}>
-            <span className="text-xs font-bold text-zinc-700">You receive (est.)</span>
-            <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
-              <p className="font-mono text-3xl font-bold tabular-nums text-black">
-                {ammReady && parsedIn > B0 && estOut > B0 ? formatUnits(estOut, STABLE_TOKEN_DECIMALS) : "—"}
-              </p>
-              <span className="rounded-lg border-[2px] border-black bg-emerald-200 px-3 py-1.5 font-mono text-[10px] font-bold uppercase text-black shadow-[2px_2px_0_0_#000]">
-                {receiveSide}
-              </span>
-            </div>
-            {!ammReady && (
-              <p className="mt-2 text-xs leading-relaxed text-amber-900/90">
-                Output appears after the pool has both stables — then the vault mints the other token to your wallet.
-              </p>
-            )}
-            <div className="mt-3 space-y-1 font-mono text-[10px] text-zinc-600">
-              <p>
-                Price impact:{" "}
-                <span className="font-bold text-black">
-                  {ammReady && idealOut > B0 && quoteOut > B0
-                    ? `${(priceImpactBps / 100).toFixed(2)}%`
-                    : ammReady
-                      ? "—"
-                      : "—"}
-                </span>
-              </p>
-              {ammReady && quoteOut > B0 && (
-                <p>
-                  Min. out ({slippageBps / 100}% slip):{" "}
-                  <span className="font-bold text-black">{formatUnits(minOut, STABLE_TOKEN_DECIMALS)}</span>{" "}
-                  {receiveTokenLabel}
-                </p>
-              )}
-              {ammReady && (
-                <p>
-                  Reserves USDC {formatUnits(rU, STABLE_TOKEN_DECIMALS)} · {eurStableSymbol}{" "}
-                  {formatUnits(rE, STABLE_TOKEN_DECIMALS)}
-                </p>
-              )}
-            </div>
-          </div>
+          <Button
+            type="button"
+            variant="brutalPrimary"
+            size="lg"
+            className="w-full"
+            disabled={!canSwap || busy !== null}
+            onClick={onSwap}
+          >
+            {busy === "swap" ? "Swapping..." : `Swap ${payTokenLabel} for ${receiveTokenLabel}`}
+          </Button>
 
-          <div className="space-y-3 pt-2">
-            {!isConnected ? (
-              <p className="py-2 text-center text-sm font-medium text-zinc-600">Connect wallet to continue</p>
-            ) : ammReady ? (
-              <>
-                {needApproval && parsedIn > B0 && (
-                  <Button
-                    type="button"
-                    variant="brutalOutline"
-                    className="w-full font-mono text-sm uppercase"
-                    disabled={busy !== null}
-                    onClick={onApprove}
-                  >
-                    {busy === "approve" ? "Approving…" : `Approve ${payTokenLabel}`}
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="brutalPrimary"
-                  size="lg"
-                  className="w-full font-mono text-sm uppercase"
-                  disabled={!canAmmSwap || busy !== null}
-                  onClick={onSwap}
-                >
-                  {busy === "swap"
-                    ? "Swapping…"
-                    : needApproval && parsedIn > B0
-                      ? "Approve token first"
-                      : parsedIn <= B0
-                        ? "Enter amount"
-                        : `Swap ${payTokenLabel} for ${receiveTokenLabel}`}
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  asChild
-                  variant="brutalPrimary"
-                  size="lg"
-                  className="w-full font-mono text-sm uppercase"
-                >
-                  <Link href="/liquidity">
-                    {vault ? "Add liquidity to enable swap" : "Open Pool — set vault & liquidity"}
-                  </Link>
-                </Button>
-                <details className="rounded-xl border-[3px] border-black bg-[#fafaf8] shadow-[4px_4px_0_0_#000]">
-                  <summary className="cursor-pointer list-none px-4 py-3 font-mono text-[10px] font-bold uppercase tracking-wide text-zinc-600 marker:content-none [&::-webkit-details-marker]:hidden">
-                    Same-token send only · not USDC↔{eurStableSymbol}
-                  </summary>
-                  <div className="space-y-3 border-t-[3px] border-black px-4 pb-4 pt-3">
-                    <p className="text-xs text-zinc-600">
-                      ERC-20 <span className="font-mono font-bold">transfer</span> moves {payTokenLabel} only.
-                    </p>
-                    <div className="flex items-center justify-between gap-3 rounded-lg border-[2px] border-black bg-white px-3 py-3 shadow-[2px_2px_0_0_#000]">
-                      <div className="min-w-0">
-                        <Label className="text-[10px]">Destination</Label>
-                        <p className="mt-1 truncate font-mono text-xs font-bold text-black">
-                          {customRecipient
-                            ? "Another wallet"
-                            : address
-                              ? `My wallet · ${shortAddr(address)}`
-                              : "Connect wallet"}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={customRecipient}
-                        aria-label="Send to another address"
-                        onClick={() => {
-                          setCustomRecipient((v) => !v);
-                          setRecipient("");
-                        }}
-                        className={cn(
-                          "relative h-8 w-[52px] shrink-0 rounded-full border-[2px] border-black transition-colors",
-                          customRecipient ? "bg-[#9146FF]/20" : "bg-zinc-200",
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "absolute top-0.5 left-0.5 size-6 rounded-full border border-black bg-white shadow-sm transition-transform duration-200",
-                            customRecipient ? "translate-x-[22px]" : "translate-x-0",
-                          )}
-                        />
-                      </button>
-                    </div>
-                    {customRecipient && (
-                      <div>
-                        <Label>Recipient address</Label>
-                        <Input
-                          value={recipient}
-                          onChange={(e) => setRecipient(e.target.value)}
-                          placeholder="0x…"
-                          spellCheck={false}
-                          className="mt-2 border-[3px] font-mono shadow-[4px_4px_0_0_#000]"
-                        />
-                        {recipient.trim() !== "" && !recipientValid && (
-                          <p className="mt-1 text-xs font-medium text-red-600">Enter a valid 0x address</p>
-                        )}
-                      </div>
-                    )}
-                    <Button
-                      type="button"
-                      variant="brutalOutline"
-                      className="w-full font-mono text-xs uppercase"
-                      disabled={!canTransfer || busy !== null}
-                      onClick={onTransfer}
-                    >
-                      {busy === "transfer"
-                        ? "Sending…"
-                        : parsedIn <= B0
-                          ? "Enter amount"
-                          : customRecipient && !recipientValid
-                            ? "Enter recipient"
-                            : !address && !customRecipient
-                              ? "Connect wallet"
-                              : `Transfer ${payTokenLabel} only`}
-                    </Button>
-                  </div>
-                </details>
-              </>
-            )}
-          </div>
+          {!isArc ? (
+            <p className="text-xs text-zinc-600">
+              Base/Monad swaps use 0x aggregator routing across major DEX liquidity. For
+              Solana-native routes, use Jupiter in a Solana wallet.
+            </p>
+          ) : (
+            <p className="text-xs text-zinc-600">Arc swaps use your StableSwapMicroVault pool liquidity.</p>
+          )}
         </CardContent>
       </Card>
 
-      {lastTxHash && (
+      {lastTxHash ? (
         <Card variant="brutal">
           <CardContent className="pt-6">
             <Label className="text-[10px]">Last transaction</Label>
@@ -766,14 +429,13 @@ export default function SwapPage() {
               href={`${explorerBaseUrl}/tx/${lastTxHash}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2 inline-flex items-center gap-1.5 font-mono text-sm font-bold text-[#5c16c5] underline-offset-2 hover:underline"
+              className="mt-2 inline-flex items-center gap-1.5 font-mono text-sm font-bold text-[#5c16c5] hover:underline"
             >
-              {lastTxHash.slice(0, 18)}…{lastTxHash.slice(-10)}
-              <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+              {shortAddr(lastTxHash)} <ExternalLink className="size-3.5" />
             </a>
           </CardContent>
         </Card>
-      )}
+      ) : null}
     </div>
   );
 }
