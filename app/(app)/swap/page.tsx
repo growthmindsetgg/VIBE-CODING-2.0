@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Copy, ExternalLink, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { erc20Abi, formatUnits, getAddress, isAddress, maxUint256, parseUnits } from "viem";
+import { erc20Abi, formatUnits, maxUint256, parseUnits } from "viem";
 import { useAccount, useConfig, useReadContract, useSendTransaction, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 
@@ -16,23 +16,12 @@ import { Label } from "@/components/ui/label";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
 import { fetchZeroExPrice, fetchZeroExQuote } from "@/lib/aggregators/zerox";
 import { arcTestnet, getStableVaultChainById } from "@/lib/chains";
-import {
-  BASE_MAINNET_EURC,
-  BASE_MAINNET_USDC,
-  MONAD_MAINNET_EURW_PLACEHOLDER,
-  MONAD_MAINNET_USDC,
-} from "@/lib/contracts/addresses";
 import { formatOnchainError } from "@/lib/format-onchain-error";
 import { requireTxSuccess } from "@/lib/require-tx-success";
 import { B0, STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
 
 type PaySide = "USDC" | "EUR";
 type Busy = "approve" | "swap" | null;
-type TokenOption = {
-  symbol: string;
-  address: `0x${string}`;
-  decimals: number;
-};
 
 const SLIPPAGE_OPTIONS = [
   { label: "0.5%", bps: 50 },
@@ -40,28 +29,8 @@ const SLIPPAGE_OPTIONS = [
   { label: "2%", bps: 200 },
 ] as const;
 
-const BASE_TOKEN_OPTIONS: readonly TokenOption[] = [
-  { symbol: "USDC", address: BASE_MAINNET_USDC, decimals: 6 },
-  { symbol: "EURC", address: BASE_MAINNET_EURC, decimals: 6 },
-  { symbol: "WETH", address: "0x4200000000000000000000000000000000000006", decimals: 18 },
-  { symbol: "cbBTC", address: "0xcBb7C0000aB88B473b1f5AFD9ef808440EED33BF", decimals: 8 },
-  { symbol: "USDT", address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", decimals: 6 },
-];
-
-const MONAD_TOKEN_OPTIONS: readonly TokenOption[] = [
-  { symbol: "USDC", address: MONAD_MAINNET_USDC, decimals: 6 },
-  { symbol: "EURW", address: MONAD_MAINNET_EURW_PLACEHOLDER, decimals: 6 },
-  { symbol: "WMON", address: "0x3bd359c1119da7da1d913d1c4d2b7c461115433a", decimals: 18 },
-];
-
 function shortAddr(a: `0x${string}`) {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
-}
-
-function normalizeAddress(raw: string): `0x${string}` | undefined {
-  const t = raw.trim();
-  if (!t || !isAddress(t)) return undefined;
-  return getAddress(t) as `0x${string}`;
 }
 
 export default function SwapPage() {
@@ -93,129 +62,37 @@ export default function SwapPage() {
   const [aggOut, setAggOut] = useState<bigint>(B0);
   const [aggSpender, setAggSpender] = useState<`0x${string}` | null>(null);
   const [aggError, setAggError] = useState<string | null>(null);
-  const [aggSellInput, setAggSellInput] = useState("");
-  const [aggBuyInput, setAggBuyInput] = useState("");
-  const [tokenOptions, setTokenOptions] = useState<TokenOption[]>([]);
-  const [tokensLoading, setTokensLoading] = useState(false);
-  const [tokensError, setTokensError] = useState<string | null>(null);
 
-  const quickTokens = useMemo(() => {
-    if (chainId === 8453) return BASE_TOKEN_OPTIONS;
-    if (chainId === 143) return MONAD_TOKEN_OPTIONS;
-    return [] as readonly TokenOption[];
-  }, [chainId]);
-
-  const displayTokens = useMemo(
-    () => (tokenOptions.length > 0 ? tokenOptions : [...quickTokens]),
-    [tokenOptions, quickTokens],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadTokens() {
-      if (!isAggregatorMode) {
-        if (!cancelled) {
-          setTokenOptions([]);
-          setTokensError(null);
-        }
-        return;
-      }
-      setTokensLoading(true);
-      try {
-        const res = await fetch(`/api/swap/tokens?chainId=${chainId}`, { cache: "no-store" });
-        const json = (await res.json()) as { tokens?: Array<{ symbol: string; address: `0x${string}` }> };
-        if (!res.ok) throw new Error((json as { error?: string }).error || "Failed to load tokens");
-        if (cancelled) return;
-        const normalized = (json.tokens ?? []).filter((t) => isAddress(t.address)).map((t) => ({
-          symbol: t.symbol,
-          address: t.address,
-          decimals: 18,
-        }));
-        setTokenOptions(normalized);
-        setTokensError(null);
-      } catch (e) {
-        if (cancelled) return;
-        setTokensError(formatOnchainError(e));
-        setTokenOptions([]);
-      } finally {
-        if (!cancelled) setTokensLoading(false);
-      }
-    }
-    void loadTokens();
-    return () => {
-      cancelled = true;
-    };
-  }, [chainId, isAggregatorMode]);
-
-  useEffect(() => {
-    if (!isAggregatorMode) return;
-    const defaultSell = displayTokens[0]?.address ?? usdcAddr;
-    const defaultBuy = displayTokens[1]?.address ?? eurAddr;
-    setAggSellInput((cur) => (cur.trim().length ? cur : defaultSell ?? ""));
-    setAggBuyInput((cur) => (cur.trim().length ? cur : defaultBuy ?? ""));
-  }, [isAggregatorMode, displayTokens, usdcAddr, eurAddr]);
-
-  const aggSellToken = useMemo(() => normalizeAddress(aggSellInput), [aggSellInput]);
-  const aggBuyToken = useMemo(() => normalizeAddress(aggBuyInput), [aggBuyInput]);
-
-  const arcSellToken = paySide === "USDC" ? usdcAddr : eurAddr;
-  const arcBuyToken = paySide === "USDC" ? eurAddr : usdcAddr;
-
-  const payToken = isArc ? arcSellToken : aggSellToken;
-  const receiveToken = isArc ? arcBuyToken : aggBuyToken;
+  const payToken = paySide === "USDC" ? usdcAddr : eurAddr;
+  const receiveToken = paySide === "USDC" ? eurAddr : usdcAddr;
+  const payTokenLabel = paySide === "USDC" ? "USDC" : eurStableSymbol;
+  const receiveTokenLabel = paySide === "USDC" ? eurStableSymbol : "USDC";
 
   const { data: sellDecimalsData } = useReadContract({
-    address: payToken,
+    address: payToken ?? undefined,
     abi: erc20Abi,
     functionName: "decimals",
     chainId,
     query: { enabled: Boolean(isAggregatorMode && payToken) },
   });
   const { data: buyDecimalsData } = useReadContract({
-    address: receiveToken,
+    address: receiveToken ?? undefined,
     abi: erc20Abi,
     functionName: "decimals",
     chainId,
     query: { enabled: Boolean(isAggregatorMode && receiveToken) },
   });
 
-  const { data: sellSymbolData } = useReadContract({
-    address: payToken,
-    abi: erc20Abi,
-    functionName: "symbol",
-    chainId,
-    query: { enabled: Boolean(isAggregatorMode && payToken) },
-  });
-  const { data: buySymbolData } = useReadContract({
-    address: receiveToken,
-    abi: erc20Abi,
-    functionName: "symbol",
-    chainId,
-    query: { enabled: Boolean(isAggregatorMode && receiveToken) },
-  });
-
-  const sellDecimals = isArc ? STABLE_TOKEN_DECIMALS : Number(sellDecimalsData ?? 18);
-  const buyDecimals = isArc ? STABLE_TOKEN_DECIMALS : Number(buyDecimalsData ?? 18);
-
-  const payTokenLabel = isArc
-    ? paySide === "USDC"
-      ? "USDC"
-      : eurStableSymbol
-    : typeof sellSymbolData === "string"
-      ? sellSymbolData
-      : payToken
-        ? shortAddr(payToken)
-        : "Token A";
-
-  const receiveTokenLabel = isArc
-    ? paySide === "USDC"
-      ? eurStableSymbol
-      : "USDC"
-    : typeof buySymbolData === "string"
-      ? buySymbolData
-      : receiveToken
-        ? shortAddr(receiveToken)
-        : "Token B";
+  const sellDecimals = isArc
+    ? STABLE_TOKEN_DECIMALS
+    : typeof sellDecimalsData === "number"
+      ? sellDecimalsData
+      : STABLE_TOKEN_DECIMALS;
+  const buyDecimals = isArc
+    ? STABLE_TOKEN_DECIMALS
+    : typeof buyDecimalsData === "number"
+      ? buyDecimalsData
+      : STABLE_TOKEN_DECIMALS;
 
   const parsedIn = useMemo(() => {
     try {
@@ -226,7 +103,7 @@ export default function SwapPage() {
   }, [amountIn, sellDecimals]);
 
   const { data: sellBal, refetch: refetchSellBal } = useReadContract({
-    address: payToken,
+    address: payToken ?? undefined,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
@@ -235,7 +112,7 @@ export default function SwapPage() {
   });
 
   const { data: buyBal, refetch: refetchBuyBal } = useReadContract({
-    address: receiveToken,
+    address: receiveToken ?? undefined,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
@@ -261,7 +138,7 @@ export default function SwapPage() {
   const spender = isArc ? vault : aggSpender;
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
-    address: payToken,
+    address: payToken ?? undefined,
     abi: erc20Abi,
     functionName: "allowance",
     args: address && payToken && spender ? [address, spender] : undefined,
@@ -279,6 +156,10 @@ export default function SwapPage() {
   }, [isArc, reserveUsdc, reserveEurc, parsedIn, paySide]);
 
   const estOut = isArc ? arcQuoteOut : aggOut;
+  const aggregatorNeedsKey = Boolean(
+    isAggregatorMode && aggError && aggError.toLowerCase().includes("api key"),
+  );
+
   const needApproval = Boolean(
     isConnected && parsedIn > B0 && spender && (allowance === undefined || allowance < parsedIn),
   );
@@ -288,8 +169,9 @@ export default function SwapPage() {
       isSupportedChain &&
       payToken &&
       receiveToken &&
-      payToken.toLowerCase() !== receiveToken.toLowerCase() &&
       parsedIn > B0 &&
+      estOut > B0 &&
+      !aggregatorNeedsKey &&
       !needApproval,
   );
 
@@ -449,7 +331,8 @@ export default function SwapPage() {
             Swap
           </h1>
           <p className="mt-2 font-mono text-xs text-zinc-600">
-            {chainName} · {isArc ? "Arc Vault AMM" : "0x Aggregator Route"}
+            {chainName} · USDC ↔ {eurStableSymbol}
+            {isArc ? " · Arc Vault AMM" : " · 0x Aggregator Route"}
           </p>
         </div>
         <Button type="button" variant="brutalOutline" size="sm" onClick={() => void refreshAll()}>
@@ -492,69 +375,28 @@ export default function SwapPage() {
                 placeholder="0.0"
                 className="min-h-[52px] border-[3px] font-mono text-2xl font-bold"
               />
-              {isArc ? (
-                <div className="flex rounded-lg border-[3px] border-black bg-white p-1">
-                  <button
-                    type="button"
-                    onClick={() => setPaySide("USDC")}
-                    className={`rounded px-3 py-1 text-xs font-bold ${
-                      paySide === "USDC" ? "bg-black text-white" : "text-zinc-500"
-                    }`}
-                  >
-                    USDC
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaySide("EUR")}
-                    className={`rounded px-3 py-1 text-xs font-bold ${
-                      paySide === "EUR" ? "bg-black text-white" : "text-zinc-500"
-                    }`}
-                  >
-                    {eurStableSymbol}
-                  </button>
-                </div>
-              ) : null}
+              <div className="flex rounded-lg border-[3px] border-black bg-white p-1">
+                <button
+                  type="button"
+                  onClick={() => setPaySide("USDC")}
+                  className={`rounded px-3 py-1 text-xs font-bold ${
+                    paySide === "USDC" ? "bg-black text-white" : "text-zinc-500"
+                  }`}
+                >
+                  USDC
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaySide("EUR")}
+                  className={`rounded px-3 py-1 text-xs font-bold ${
+                    paySide === "EUR" ? "bg-black text-white" : "text-zinc-500"
+                  }`}
+                >
+                  {eurStableSymbol}
+                </button>
+              </div>
             </div>
           </div>
-
-          {!isArc ? (
-            <div className="space-y-2 rounded-lg border border-black/20 bg-white/70 p-3">
-              <Label className="text-[10px]">Aggregator token pair (Base/Monad)</Label>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <select
-                  value={aggSellInput}
-                  onChange={(e) => setAggSellInput(e.target.value)}
-                  className="h-10 rounded-md border-2 border-black bg-white px-2 font-mono text-xs"
-                >
-                  {!aggSellInput ? <option value="">Select sell token</option> : null}
-                  {displayTokens.map((t) => (
-                    <option key={`sell-${t.address}`} value={t.address}>
-                      {t.symbol} · {shortAddr(t.address)}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={aggBuyInput}
-                  onChange={(e) => setAggBuyInput(e.target.value)}
-                  className="h-10 rounded-md border-2 border-black bg-white px-2 font-mono text-xs"
-                >
-                  {!aggBuyInput ? <option value="">Select buy token</option> : null}
-                  {displayTokens.map((t) => (
-                    <option key={`buy-${t.address}`} value={t.address}>
-                      {t.symbol} · {shortAddr(t.address)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {tokensLoading ? <p className="text-xs text-zinc-600">Loading top liquidity tokens…</p> : null}
-              {tokensError ? <p className="text-xs text-amber-700">Token list fallback: {tokensError}</p> : null}
-              {!payToken || !receiveToken ? (
-                <p className="text-xs text-amber-700">Select both sell and buy tokens.</p>
-              ) : payToken.toLowerCase() === receiveToken.toLowerCase() ? (
-                <p className="text-xs text-amber-700">Choose two different tokens.</p>
-              ) : null}
-            </div>
-          ) : null}
 
           <div className="space-y-2 rounded-xl border-[3px] border-black bg-white p-4">
             <Label className="text-[10px]">You receive (est.)</Label>
@@ -562,7 +404,11 @@ export default function SwapPage() {
               {parsedIn > B0 && estOut > B0 ? formatUnits(estOut, buyDecimals) : "—"}
             </p>
             <p className="font-mono text-[11px] text-zinc-600">Token: {receiveTokenLabel}</p>
-            {aggError && isAggregatorMode ? (
+            {aggregatorNeedsKey ? (
+              <p className="text-xs text-amber-700">
+                Aggregator setup required: set <code>ZEROX_API_KEY</code> in deployment env.
+              </p>
+            ) : aggError && isAggregatorMode ? (
               <p className="text-xs text-amber-700">Quote: {aggError}</p>
             ) : null}
           </div>
@@ -605,14 +451,11 @@ export default function SwapPage() {
             {busy === "swap" ? "Swapping..." : `Swap ${payTokenLabel} for ${receiveTokenLabel}`}
           </Button>
 
-          {!isArc ? (
-            <p className="text-xs text-zinc-600">
-              Base/Monad swaps use 0x aggregator routing across major DEX liquidity. For
-              Solana-native routes, use Jupiter in a Solana wallet.
-            </p>
-          ) : (
-            <p className="text-xs text-zinc-600">Arc swaps use your StableSwapMicroVault pool liquidity.</p>
-          )}
+          <p className="text-xs text-zinc-600">
+            {isArc
+              ? "Arc swaps route through your StableSwapMicroVault pool."
+              : `${chainName} swaps route USDC ↔ ${eurStableSymbol} via 0x aggregator across the deepest DEX liquidity.`}
+          </p>
         </CardContent>
       </Card>
 
