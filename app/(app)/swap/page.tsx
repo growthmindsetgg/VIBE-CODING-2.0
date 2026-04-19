@@ -164,6 +164,10 @@ export default function SwapPage() {
     isConnected && parsedIn > B0 && spender && (allowance === undefined || allowance < parsedIn),
   );
 
+  const insufficientBalance = Boolean(
+    isConnected && parsedIn > B0 && sellBal !== undefined && parsedIn > sellBal,
+  );
+
   const canSwap = Boolean(
     isConnected &&
       isSupportedChain &&
@@ -172,7 +176,8 @@ export default function SwapPage() {
       parsedIn > B0 &&
       estOut > B0 &&
       !aggregatorNeedsKey &&
-      !needApproval,
+      !needApproval &&
+      !insufficientBalance,
   );
 
   const refreshAll = useCallback(async () => {
@@ -366,7 +371,18 @@ export default function SwapPage() {
       <Card variant="brutal">
         <CardContent className="space-y-4 pt-6">
           <div className="space-y-2">
-            <Label className="text-[10px]">You pay</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-[10px]">You pay</Label>
+              {sellBal !== undefined && sellBal > B0 ? (
+                <button
+                  type="button"
+                  onClick={() => setAmountIn(formatUnits(sellBal, sellDecimals))}
+                  className="font-mono text-[10px] font-bold uppercase text-[#5c16c5] hover:underline"
+                >
+                  Max: {formatUnits(sellBal, sellDecimals)} {payTokenLabel}
+                </button>
+              ) : null}
+            </div>
             <div className="flex gap-2">
               <Input
                 value={amountIn}
@@ -396,6 +412,12 @@ export default function SwapPage() {
                 </button>
               </div>
             </div>
+            {insufficientBalance ? (
+              <p className="font-mono text-[11px] font-bold text-red-600">
+                Insufficient {payTokenLabel} balance on {chainName}. You have{" "}
+                {sellBal !== undefined ? formatUnits(sellBal, sellDecimals) : "0"} {payTokenLabel}.
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-2 rounded-xl border-[3px] border-black bg-white p-4">
@@ -448,7 +470,11 @@ export default function SwapPage() {
             disabled={!canSwap || busy !== null}
             onClick={onSwap}
           >
-            {busy === "swap" ? "Swapping..." : `Swap ${payTokenLabel} for ${receiveTokenLabel}`}
+            {busy === "swap"
+              ? "Swapping..."
+              : insufficientBalance
+                ? `Not enough ${payTokenLabel}`
+                : `Swap ${payTokenLabel} for ${receiveTokenLabel}`}
           </Button>
 
           <p className="text-xs text-zinc-600">
