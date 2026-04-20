@@ -31,14 +31,16 @@ export const BASE_MAINNET_EURC = getAddress(
   "0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42",
 ) as `0x${string}`;
 
-/** Monad mainnet — Circle USDC; EURW placeholder (Newrails EURWT on mainnet until production EURW is published). */
+/** Monad mainnet — Circle USDC; Newrails EURW (MiCA-compliant euro stable, live on Monad March 2026). */
 export const MONAD_MAINNET_USDC = getAddress(
   "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
 ) as `0x${string}`;
-/** Placeholder: EURW Testing (EURWT) — replace with production EURW when published. */
-export const MONAD_MAINNET_EURW_PLACEHOLDER = getAddress(
-  "0x41cff055c42b65fb1712191c8564f17e318d47c8",
+/** Production EURW on Monad mainnet — paired with USDC on Uniswap V4, routable via 0x. */
+export const MONAD_MAINNET_EURW = getAddress(
+  "0x1111b3ded9f1fe1801ad4ebef8e2788183a24111",
 ) as `0x${string}`;
+/** @deprecated Use MONAD_MAINNET_EURW. */
+export const MONAD_MAINNET_EURW_PLACEHOLDER = MONAD_MAINNET_EURW;
 
 const CANONICAL_BY_CHAIN_ID: Record<number, StableVaultChainAddresses> = {
   [arcTestnet.id]: {
@@ -55,7 +57,7 @@ const CANONICAL_BY_CHAIN_ID: Record<number, StableVaultChainAddresses> = {
   },
   [monadMainnet.id]: {
     usdc: MONAD_MAINNET_USDC,
-    eurStable: MONAD_MAINNET_EURW_PLACEHOLDER,
+    eurStable: MONAD_MAINNET_EURW,
     eurStableSymbol: "EURW",
     vault: null,
   },
