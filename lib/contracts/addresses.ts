@@ -12,6 +12,12 @@ export type StableVaultChainAddresses = {
   vault: `0x${string}` | null;
 };
 
+/** Per-chain yield-vault addresses (ERC-4626 single-asset staking). */
+export type YieldVaultChainAddresses = {
+  usdcYieldVault: `0x${string}` | null;
+  eurYieldVault: `0x${string}` | null;
+};
+
 /** Arc testnet canonical USDC (gas token contract). */
 export const ARC_TESTNET_USDC = "0x3600000000000000000000000000000000000000" as const;
 
@@ -134,6 +140,40 @@ export function eurcAddress(chainId: number): `0x${string}` {
 /** Vault for stable swap; null if not configured for this chain. */
 export function stableVaultAddress(chainId: number): `0x${string}` | null {
   return getStableVaultAddresses(chainId)?.vault ?? null;
+}
+
+/**
+ * Per-chain yield-vault addresses. Env overrides:
+ * - Arc:   NEXT_PUBLIC_ARC_USDC_YIELD_VAULT, NEXT_PUBLIC_ARC_EUR_YIELD_VAULT
+ * - Base:  NEXT_PUBLIC_BASE_USDC_YIELD_VAULT, NEXT_PUBLIC_BASE_EUR_YIELD_VAULT
+ * - Monad: NEXT_PUBLIC_MONAD_USDC_YIELD_VAULT, NEXT_PUBLIC_MONAD_EUR_YIELD_VAULT
+ */
+export function getYieldVaultAddresses(chainId: number): YieldVaultChainAddresses {
+  const pick = (key: string): `0x${string}` | null => {
+    const v = parseAddressEnv(key);
+    if (!v || v.toLowerCase() === zeroAddress.toLowerCase()) return null;
+    return v;
+  };
+
+  if (chainId === arcTestnet.id) {
+    return {
+      usdcYieldVault: pick("NEXT_PUBLIC_ARC_USDC_YIELD_VAULT"),
+      eurYieldVault: pick("NEXT_PUBLIC_ARC_EUR_YIELD_VAULT"),
+    };
+  }
+  if (chainId === baseMainnet.id) {
+    return {
+      usdcYieldVault: pick("NEXT_PUBLIC_BASE_USDC_YIELD_VAULT"),
+      eurYieldVault: pick("NEXT_PUBLIC_BASE_EUR_YIELD_VAULT"),
+    };
+  }
+  if (chainId === monadMainnet.id) {
+    return {
+      usdcYieldVault: pick("NEXT_PUBLIC_MONAD_USDC_YIELD_VAULT"),
+      eurYieldVault: pick("NEXT_PUBLIC_MONAD_EUR_YIELD_VAULT"),
+    };
+  }
+  return { usdcYieldVault: null, eurYieldVault: null };
 }
 
 export function protocolTreasury(): `0x${string}` | undefined {

@@ -14,6 +14,7 @@ const navFunds = [
   { href: "/my-funds", label: "My funds" },
   { href: "/swap", label: "Swap" },
   { href: "/liquidity", label: "Pool" },
+  { href: "/stake", label: "Stake" },
   { href: "/create-fund", label: "Create fund" },
 ] as const;
 
