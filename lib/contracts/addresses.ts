@@ -142,35 +142,55 @@ export function stableVaultAddress(chainId: number): `0x${string}` | null {
   return getStableVaultAddresses(chainId)?.vault ?? null;
 }
 
+/** Canonical yield-vault addresses — deployed 2026-04-20, owner = deployer EOA (rotate to multisig before production TVL). */
+export const ARC_USDC_YIELD_VAULT = getAddress(
+  "0xa0902634a3c72fabdc8d0bad7e4a865a12830d6c",
+) as `0x${string}`;
+export const ARC_EUR_YIELD_VAULT = getAddress(
+  "0x4a31eea0f2e30fec7471a55d1bcb35b844854041",
+) as `0x${string}`;
+export const BASE_USDC_YIELD_VAULT = getAddress(
+  "0x94d41955454cee2185168f80df15c95935f1af40",
+) as `0x${string}`;
+export const BASE_EUR_YIELD_VAULT = getAddress(
+  "0x6e2eaceb1095e450b0c9d2f360fb0dbb181ff017",
+) as `0x${string}`;
+export const MONAD_USDC_YIELD_VAULT = getAddress(
+  "0x6a6652cc5e37401095965f04d40ab93f74cf6b36",
+) as `0x${string}`;
+export const MONAD_EUR_YIELD_VAULT = getAddress(
+  "0x34de463f0056bdf87da094a545a6d8712d3e89a0",
+) as `0x${string}`;
+
 /**
- * Per-chain yield-vault addresses. Env overrides:
+ * Per-chain yield-vault addresses. Env overrides win over canonical fallbacks:
  * - Arc:   NEXT_PUBLIC_ARC_USDC_YIELD_VAULT, NEXT_PUBLIC_ARC_EUR_YIELD_VAULT
  * - Base:  NEXT_PUBLIC_BASE_USDC_YIELD_VAULT, NEXT_PUBLIC_BASE_EUR_YIELD_VAULT
  * - Monad: NEXT_PUBLIC_MONAD_USDC_YIELD_VAULT, NEXT_PUBLIC_MONAD_EUR_YIELD_VAULT
  */
 export function getYieldVaultAddresses(chainId: number): YieldVaultChainAddresses {
-  const pick = (key: string): `0x${string}` | null => {
+  const pick = (key: string, fallback: `0x${string}` | null): `0x${string}` | null => {
     const v = parseAddressEnv(key);
-    if (!v || v.toLowerCase() === zeroAddress.toLowerCase()) return null;
+    if (!v || v.toLowerCase() === zeroAddress.toLowerCase()) return fallback;
     return v;
   };
 
   if (chainId === arcTestnet.id) {
     return {
-      usdcYieldVault: pick("NEXT_PUBLIC_ARC_USDC_YIELD_VAULT"),
-      eurYieldVault: pick("NEXT_PUBLIC_ARC_EUR_YIELD_VAULT"),
+      usdcYieldVault: pick("NEXT_PUBLIC_ARC_USDC_YIELD_VAULT", ARC_USDC_YIELD_VAULT),
+      eurYieldVault: pick("NEXT_PUBLIC_ARC_EUR_YIELD_VAULT", ARC_EUR_YIELD_VAULT),
     };
   }
   if (chainId === baseMainnet.id) {
     return {
-      usdcYieldVault: pick("NEXT_PUBLIC_BASE_USDC_YIELD_VAULT"),
-      eurYieldVault: pick("NEXT_PUBLIC_BASE_EUR_YIELD_VAULT"),
+      usdcYieldVault: pick("NEXT_PUBLIC_BASE_USDC_YIELD_VAULT", BASE_USDC_YIELD_VAULT),
+      eurYieldVault: pick("NEXT_PUBLIC_BASE_EUR_YIELD_VAULT", BASE_EUR_YIELD_VAULT),
     };
   }
   if (chainId === monadMainnet.id) {
     return {
-      usdcYieldVault: pick("NEXT_PUBLIC_MONAD_USDC_YIELD_VAULT"),
-      eurYieldVault: pick("NEXT_PUBLIC_MONAD_EUR_YIELD_VAULT"),
+      usdcYieldVault: pick("NEXT_PUBLIC_MONAD_USDC_YIELD_VAULT", MONAD_USDC_YIELD_VAULT),
+      eurYieldVault: pick("NEXT_PUBLIC_MONAD_EUR_YIELD_VAULT", MONAD_EUR_YIELD_VAULT),
     };
   }
   return { usdcYieldVault: null, eurYieldVault: null };
