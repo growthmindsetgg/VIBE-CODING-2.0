@@ -196,6 +196,38 @@ export function getYieldVaultAddresses(chainId: number): YieldVaultChainAddresse
   return { usdcYieldVault: null, eurYieldVault: null };
 }
 
+/**
+ * Canonical ForexPool on Arc testnet — oracle-priced USDC<->EURC AMM with shared LP shares.
+ * Deployed 2026-04-15 (supersedes ForexTrader).
+ */
+export const ARC_FOREX_POOL = getAddress(
+  "0x5dd8c5822561b90db47ad5f9691c7603daaffbd5",
+) as `0x${string}`;
+
+/** @deprecated Predecessor contract without LP support. Use ARC_FOREX_POOL. */
+export const ARC_FOREX_TRADER = getAddress(
+  "0xbad5f670edf4d638a624479ec352fb2eb0822668",
+) as `0x${string}`;
+
+/**
+ * ForexPool address for a chain. Arc only — on Base/Monad we use 0x aggregator.
+ * Env override: NEXT_PUBLIC_ARC_FOREX_POOL.
+ */
+export function forexPoolAddress(chainId: number): `0x${string}` | null {
+  if (chainId !== arcTestnet.id) return null;
+  const override = parseAddressEnv("NEXT_PUBLIC_ARC_FOREX_POOL");
+  if (override && override.toLowerCase() !== zeroAddress.toLowerCase()) return override;
+  return ARC_FOREX_POOL;
+}
+
+/** @deprecated Use forexPoolAddress. Kept for the legacy trader contract. */
+export function forexTraderAddress(chainId: number): `0x${string}` | null {
+  if (chainId !== arcTestnet.id) return null;
+  const override = parseAddressEnv("NEXT_PUBLIC_ARC_FOREX_TRADER");
+  if (override && override.toLowerCase() !== zeroAddress.toLowerCase()) return override;
+  return ARC_FOREX_TRADER;
+}
+
 export function protocolTreasury(): `0x${string}` | undefined {
   const raw = process.env.NEXT_PUBLIC_PROTOCOL_TREASURY;
   if (!raw || !isAddress(raw.trim())) return undefined;
