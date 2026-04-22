@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { ShieldCheck, Lock, Clock, FileCheck2, ExternalLink } from "lucide-react";
+import { ShieldCheck, Lock, Clock, FileCheck2, ExternalLink, TrendingUp } from "lucide-react";
 import { useAccount } from "wagmi";
+import { ForexVaultCard } from "@/components/stable-vault/forex-vault-card";
 import { StakePoolCard } from "@/components/stable-vault/stake-pool-card";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
 import { WrongNetworkBanner } from "@/components/stable-vault/wrong-network-banner";
-import { getYieldVaultAddresses } from "@/lib/contracts/addresses";
+import { baseMainnet } from "@/lib/chains";
+import { baseForexVaultAddress, getYieldVaultAddresses } from "@/lib/contracts/addresses";
 
 export default function StakePage() {
   const { isConnected } = useAccount();
@@ -20,6 +22,8 @@ export default function StakePage() {
   } = useStableVaultAddresses();
 
   const yv = getYieldVaultAddresses(chainId);
+  const isBase = chainId === baseMainnet.id;
+  const baseForexVault = baseForexVaultAddress(chainId);
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
@@ -29,8 +33,9 @@ export default function StakePage() {
           Stake
         </h1>
         <p className="max-w-2xl font-mono text-sm text-zinc-700">
-          Single-asset stablecoin vaults. Stake USDC or {eurStableSymbol}, earn yield as the price-per-share
-          rises. Standard ERC-4626. No lockup, withdraw anytime.
+          {isBase
+            ? "Base: deposit USDC + EURC into the market-maker vault — funds are routed to Aerodrome's USDC/EURC stable pool and earn live trade fees. 0.50% withdrawal fee."
+            : `Single-asset stablecoin vaults. Stake USDC or ${eurStableSymbol}, earn yield as the price-per-share rises. Standard ERC-4626. No lockup, withdraw anytime.`}
         </p>
       </div>
 
@@ -73,29 +78,53 @@ export default function StakePage() {
 
       {isConnected && !isSupportedChain ? <WrongNetworkBanner /> : null}
 
-      {/* Pools */}
-      <div className="grid gap-5 md:grid-cols-2">
-        <StakePoolCard
-          asset={usdc}
-          vault={yv.usdcYieldVault}
-          assetSymbol="USDC"
-          shareSymbol="sUSDC"
-          chainId={chainId}
-          explorerBaseUrl={explorerBaseUrl}
-          isConnected={isConnected}
-          disabled={!isSupportedChain}
-        />
-        <StakePoolCard
-          asset={eurc}
-          vault={yv.eurYieldVault}
-          assetSymbol={eurStableSymbol}
-          shareSymbol={`s${eurStableSymbol}`}
-          chainId={chainId}
-          explorerBaseUrl={explorerBaseUrl}
-          isConnected={isConnected}
-          disabled={!isSupportedChain}
-        />
-      </div>
+      {/* Pools: on Base, show the active market-maker vault; on Arc/Monad, show the
+          simple single-asset yield vaults. */}
+      {isBase ? (
+        <>
+          <div className="flex items-center gap-2 rounded-md border-2 border-cyan-700 bg-gradient-to-r from-[#0a0a12] to-[#1a0b2e] px-3 py-2 font-mono text-[11px] text-cyan-100">
+            <TrendingUp className="size-3.5 text-cyan-400" />
+            <span>
+              <b className="text-cyan-300">Base mode:</b> your deposit is deployed to the
+              Aerodrome USDC/EURC stable pool to earn trade fees. Position value updates live.
+            </span>
+          </div>
+          <div className="grid gap-5">
+            <ForexVaultCard
+              vault={baseForexVault}
+              usdc={usdc}
+              eurc={eurc}
+              chainId={chainId}
+              explorerBaseUrl={explorerBaseUrl}
+              isConnected={isConnected}
+              disabled={!isSupportedChain}
+            />
+          </div>
+        </>
+      ) : (
+        <div className="grid gap-5 md:grid-cols-2">
+          <StakePoolCard
+            asset={usdc}
+            vault={yv.usdcYieldVault}
+            assetSymbol="USDC"
+            shareSymbol="sUSDC"
+            chainId={chainId}
+            explorerBaseUrl={explorerBaseUrl}
+            isConnected={isConnected}
+            disabled={!isSupportedChain}
+          />
+          <StakePoolCard
+            asset={eurc}
+            vault={yv.eurYieldVault}
+            assetSymbol={eurStableSymbol}
+            shareSymbol={`s${eurStableSymbol}`}
+            chainId={chainId}
+            explorerBaseUrl={explorerBaseUrl}
+            isConnected={isConnected}
+            disabled={!isSupportedChain}
+          />
+        </div>
+      )}
 
       {/* Disclosures */}
       <div className="rounded-xl border-[3px] border-black bg-[#0a0a12] p-5 font-mono text-[11px] text-cyan-100 shadow-[5px_5px_0_0_#5c16c5]">

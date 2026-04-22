@@ -18,6 +18,7 @@
     "deploy:yield-vault:monad": "hardhat run scripts/deploy-yield-vault.ts --network monad-mainnet",
     "deploy:forex-trader": "hardhat run scripts/deploy-forex-trader.ts --network arc-testnet",
     "deploy:forex-pool": "hardhat run scripts/deploy-forex-pool.ts --network arc-testnet",
+    "deploy:base-forex-vault": "hardhat run scripts/deploy-base-forex-vault.ts --network base-mainnet",
     "deploy:vercel": "vercel --prod"
   },
   "dependencies": {

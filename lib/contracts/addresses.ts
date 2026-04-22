@@ -228,6 +228,35 @@ export function forexTraderAddress(chainId: number): `0x${string}` | null {
   return ARC_FOREX_TRADER;
 }
 
+/**
+ * Aerodrome V2 router on Base mainnet — used by BaseForexVault to add/remove
+ * liquidity on the USDC/EURC stable pool. Source: https://aerodrome.finance
+ */
+export const BASE_AERODROME_ROUTER = getAddress(
+  "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43",
+) as `0x${string}`;
+
+/** Aerodrome V2 default PoolFactory on Base — Router.defaultFactory() returns this. */
+export const BASE_AERODROME_POOL_FACTORY = getAddress(
+  "0x420DD381b31aEf6683db6B902084cB0FFECe40Da",
+) as `0x${string}`;
+
+/**
+ * BaseForexVault — market-maker vault that deposits USDC+EURC into the
+ * Aerodrome USDC/EURC stable pool on Base. Deployed 2026-04-22; owner =
+ * deployer EOA (rotate to multisig before production TVL).
+ */
+export const BASE_FOREX_VAULT = getAddress(
+  "0x1a3cb640ee31ecd31760b138b2dbdfbc5ca46dcb",
+) as `0x${string}`;
+
+export function baseForexVaultAddress(chainId: number): `0x${string}` | null {
+  if (chainId !== baseMainnet.id) return null;
+  const override = parseAddressEnv("NEXT_PUBLIC_BASE_FOREX_VAULT");
+  if (override && override.toLowerCase() !== zeroAddress.toLowerCase()) return override;
+  return BASE_FOREX_VAULT;
+}
+
 export function protocolTreasury(): `0x${string}` | undefined {
   const raw = process.env.NEXT_PUBLIC_PROTOCOL_TREASURY;
   if (!raw || !isAddress(raw.trim())) return undefined;
