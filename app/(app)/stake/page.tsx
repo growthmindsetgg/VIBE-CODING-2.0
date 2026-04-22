@@ -3,12 +3,17 @@
 import Link from "next/link";
 import { ShieldCheck, Lock, Clock, FileCheck2, ExternalLink, TrendingUp } from "lucide-react";
 import { useAccount } from "wagmi";
+import { ForexAgentCard } from "@/components/stable-vault/forex-agent-card";
 import { ForexVaultCard } from "@/components/stable-vault/forex-vault-card";
 import { StakePoolCard } from "@/components/stable-vault/stake-pool-card";
 import { useStableVaultAddresses } from "@/components/stable-vault/use-stable-vault";
 import { WrongNetworkBanner } from "@/components/stable-vault/wrong-network-banner";
 import { baseMainnet } from "@/lib/chains";
-import { baseForexVaultAddress, getYieldVaultAddresses } from "@/lib/contracts/addresses";
+import {
+  baseForexVaultAddress,
+  forexTradingAgentAddress,
+  getYieldVaultAddresses,
+} from "@/lib/contracts/addresses";
 
 export default function StakePage() {
   const { isConnected } = useAccount();
@@ -24,6 +29,7 @@ export default function StakePage() {
   const yv = getYieldVaultAddresses(chainId);
   const isBase = chainId === baseMainnet.id;
   const baseForexVault = baseForexVaultAddress(chainId);
+  const baseForexAgent = forexTradingAgentAddress(chainId);
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
@@ -85,11 +91,21 @@ export default function StakePage() {
           <div className="flex items-center gap-2 rounded-md border-2 border-cyan-700 bg-gradient-to-r from-[#0a0a12] to-[#1a0b2e] px-3 py-2 font-mono text-[11px] text-cyan-100">
             <TrendingUp className="size-3.5 text-cyan-400" />
             <span>
-              <b className="text-cyan-300">Base mode:</b> your deposit is deployed to the
-              Aerodrome USDC/EURC stable pool to earn trade fees. Position value updates live.
+              <b className="text-cyan-300">Base mode:</b> two vaults. Passive <b>Market Maker</b>{" "}
+              earns Aerodrome LP fees. Active <b>Trading Agent</b> rotates USDC↔EURC on an EUR/USD
+              momentum signal and takes a small commission on each trade.
             </span>
           </div>
           <div className="grid gap-5">
+            <ForexAgentCard
+              agent={baseForexAgent}
+              usdc={usdc}
+              eurc={eurc}
+              chainId={chainId}
+              explorerBaseUrl={explorerBaseUrl}
+              isConnected={isConnected}
+              disabled={!isSupportedChain}
+            />
             <ForexVaultCard
               vault={baseForexVault}
               usdc={usdc}

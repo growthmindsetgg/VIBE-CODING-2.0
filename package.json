@@ -19,6 +19,7 @@
     "deploy:forex-trader": "hardhat run scripts/deploy-forex-trader.ts --network arc-testnet",
     "deploy:forex-pool": "hardhat run scripts/deploy-forex-pool.ts --network arc-testnet",
     "deploy:base-forex-vault": "hardhat run scripts/deploy-base-forex-vault.ts --network base-mainnet",
+    "deploy:forex-agent:base": "hardhat run scripts/deploy-forex-agent.ts --network base-mainnet",
     "deploy:vercel": "vercel --prod"
   },
   "dependencies": {

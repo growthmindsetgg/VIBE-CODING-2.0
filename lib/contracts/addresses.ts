@@ -257,6 +257,24 @@ export function baseForexVaultAddress(chainId: number): `0x${string}` | null {
   return BASE_FOREX_VAULT;
 }
 
+/**
+ * ForexTradingAgent — actively-managed USDC/EURC spot-rotation vault on Base.
+ * Keeper bot swaps USDC↔EURC on Aerodrome based on an EUR/USD momentum signal;
+ * each trade accrues a `tradeFeeBps` commission (default 20 bps) to the owner.
+ * Deployed 2026-04-22; owner + keeper = deployer EOA (rotate to hot-wallet
+ * keeper + multisig owner before real TVL).
+ */
+export const BASE_FOREX_AGENT = getAddress(
+  "0xe56a3d0e9482959f6cf62e47e3fb43bdbd4165cc",
+) as `0x${string}`;
+
+export function forexTradingAgentAddress(chainId: number): `0x${string}` | null {
+  if (chainId !== baseMainnet.id) return null;
+  const override = parseAddressEnv("NEXT_PUBLIC_BASE_FOREX_AGENT");
+  if (override && override.toLowerCase() !== zeroAddress.toLowerCase()) return override;
+  return BASE_FOREX_AGENT;
+}
+
 export function protocolTreasury(): `0x${string}` | undefined {
   const raw = process.env.NEXT_PUBLIC_PROTOCOL_TREASURY;
   if (!raw || !isAddress(raw.trim())) return undefined;
