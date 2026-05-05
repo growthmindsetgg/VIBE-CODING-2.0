@@ -3,8 +3,7 @@
 import { useMemo } from "react";
 import { useAccount, useChainId } from "wagmi";
 
-import { arcTestnet } from "@/lib/chains/arc";
-import { getStableVaultChainById, isStableVaultSupportedChainId } from "@/lib/chains";
+import { baseMainnet, getStableVaultChainById, isStableVaultSupportedChainId } from "@/lib/chains";
 import { getStableVaultAddresses } from "@/lib/contracts/addresses";
 
 export type UseStableVaultAddressesResult = {
@@ -23,7 +22,7 @@ export type UseStableVaultAddressesResult = {
 };
 
 /**
- * Pool token addresses: when disconnected, defaults to Arc testnet preview.
+ * Pool token addresses: when disconnected, defaults to Base mainnet preview.
  * When connected on an unsupported chain, pool addresses are undefined and `vault` is null.
  */
 export function useStableVaultAddresses(): UseStableVaultAddressesResult {
@@ -35,10 +34,10 @@ export function useStableVaultAddresses(): UseStableVaultAddressesResult {
 
     const chainMeta = getStableVaultChainById(chainId);
     const explorerBaseUrl =
-      chainMeta?.blockExplorers?.default?.url ?? arcTestnet.blockExplorers.default.url;
+      chainMeta?.blockExplorers?.default?.url ?? baseMainnet.blockExplorers.default.url;
 
     if (!isConnected) {
-      const a = getStableVaultAddresses(arcTestnet.id)!;
+      const a = getStableVaultAddresses(baseMainnet.id)!;
       return {
         chainId,
         isSupportedChain: true,

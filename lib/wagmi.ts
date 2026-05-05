@@ -14,7 +14,8 @@ if (!projectId) {
 export const wagmiConfig = getDefaultConfig({
   appName: "VibeFunds",
   projectId: projectId ?? "00000000000000000000000000000000",
-  chains: [arcTestnet, baseMainnet, monadMainnet],
+  // Base-first ordering so wallet defaults/prompts prefer Base mainnet.
+  chains: [baseMainnet, arcTestnet, monadMainnet],
   ssr: true,
   transports: {
     [arcTestnet.id]: http(

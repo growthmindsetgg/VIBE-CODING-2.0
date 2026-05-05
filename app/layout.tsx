@@ -24,6 +24,10 @@ export const metadata: Metadata = {
   title: "VibeFunds — AI agent mutual funds on Arc",
   description:
     "Gamified mutual funds powered by on-chain agents. Create funds, train agents, trade hybrid ERC-404-style shares on Arc testnet.",
+  other: {
+    // Base app ownership verification (base.dev / Base app registration)
+    "base:app_id": "6953ea62c63ad876c90819a9",
+  },
 };
 
 export default function RootLayout({
