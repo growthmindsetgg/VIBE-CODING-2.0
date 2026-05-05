@@ -1,7 +1,7 @@
 export default function Head() {
   return (
     <>
-      <meta name="base:app_id" content="6953ea62c63ad876c90819a9" />
+      <meta name="base:app_id" content="69f9b1ca42d4fe010f1c2960" />
     </>
   );
 }
