@@ -18,6 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { stableYieldVaultAbi, stableYieldVaultSimAbi } from "@/lib/abis/stable-yield-vault";
+import { withBuilderDataSuffix } from "@/lib/base/builder-code";
 import { getStableVaultChainById, getStableVaultRpcHttpUrl } from "@/lib/chains";
 import { formatAllowanceHuman } from "@/lib/format-allowance";
 import { formatOnchainError } from "@/lib/format-onchain-error";
@@ -199,12 +200,14 @@ export function StakePoolCard({
     setBusy("approve");
     setMsg(null);
     try {
-      const hash = await writeContractAsync({
-        address: asset,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [vault, maxUint256],
-      });
+      const hash = await writeContractAsync(
+        withBuilderDataSuffix(chainId, {
+          address: asset,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [vault, maxUint256],
+        }),
+      );
       toast.loading(`Approving ${assetSymbol}…`, { id: `approve-${vault}` });
       const receipt = await waitForTransactionReceipt(config, { hash, chainId });
       requireTxSuccess(receipt, `${assetSymbol} approval reverted on-chain.`);
@@ -233,12 +236,14 @@ export function StakePoolCard({
           args: [parsedAmount, address],
         });
       }
-      const hash = await writeContractAsync({
-        address: vault,
-        abi: stableYieldVaultAbi,
-        functionName: "deposit",
-        args: [parsedAmount, address],
-      });
+      const hash = await writeContractAsync(
+        withBuilderDataSuffix(chainId, {
+          address: vault,
+          abi: stableYieldVaultAbi,
+          functionName: "deposit",
+          args: [parsedAmount, address],
+        }),
+      );
       setLastTxHash(hash);
       toast.loading(`Staking ${amount} ${assetSymbol}…`, { id: `deposit-${vault}` });
       const receipt = await waitForTransactionReceipt(config, { hash, chainId });
@@ -283,12 +288,14 @@ export function StakePoolCard({
           args: [parsedAmount, address, address],
         });
       }
-      const hash = await writeContractAsync({
-        address: vault,
-        abi: stableYieldVaultAbi,
-        functionName: "withdraw",
-        args: [parsedAmount, address, address],
-      });
+      const hash = await writeContractAsync(
+        withBuilderDataSuffix(chainId, {
+          address: vault,
+          abi: stableYieldVaultAbi,
+          functionName: "withdraw",
+          args: [parsedAmount, address, address],
+        }),
+      );
       setLastTxHash(hash);
       toast.loading(`Unstaking ${amount} ${assetSymbol}…`, { id: `withdraw-${vault}` });
       const receipt = await waitForTransactionReceipt(config, { hash, chainId });

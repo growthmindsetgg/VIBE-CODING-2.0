@@ -16,6 +16,7 @@ import {
   stableSwapMicroVaultAbi,
   stableSwapMicroVaultAddLiquiditySimAbi,
 } from "@/lib/abis/stable-swap-micro-vault";
+import { withBuilderDataSuffix } from "@/lib/base/builder-code";
 import { getStableVaultChainById, getStableVaultRpcHttpUrl } from "@/lib/chains";
 import { formatAllowanceHuman } from "@/lib/format-allowance";
 import { formatOnchainError } from "@/lib/format-onchain-error";
@@ -231,13 +232,15 @@ export default function LiquidityPage() {
     setMsg(null);
     try {
       console.log(`[approve ${label}]`, { token, spenderVault: vault, account: address });
-      const hash = await writeContractAsync({
-        chainId,
-        address: token,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [vault, maxUint256],
-      });
+      const hash = await writeContractAsync(
+        withBuilderDataSuffix(chainId, {
+          chainId,
+          address: token,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [vault, maxUint256],
+        }),
+      );
       const receipt = await waitForTransactionReceipt(config, { hash });
       requireTxSuccess(receipt, `${label} approval reverted.`);
       await refreshPool();
@@ -330,13 +333,15 @@ export default function LiquidityPage() {
         throw new Error(`Add liquidity simulation: ${reason}`);
       }
 
-      const hash = await writeContractAsync({
-        chainId,
-        address: vault,
-        abi: stableSwapMicroVaultAbi,
-        functionName: "addLiquidity",
-        args: [usdIn, eurIn, minLpOut],
-      });
+      const hash = await writeContractAsync(
+        withBuilderDataSuffix(chainId, {
+          chainId,
+          address: vault,
+          abi: stableSwapMicroVaultAbi,
+          functionName: "addLiquidity",
+          args: [usdIn, eurIn, minLpOut],
+        }),
+      );
 
       const depReceipt = await waitForTransactionReceipt(config, { hash });
       if (depReceipt.status !== "success") {
@@ -378,13 +383,15 @@ export default function LiquidityPage() {
     try {
       const lp = parseUnits(normalizeAmountInput(remLp) || "0", STABLE_PAIR_DECIMALS);
       if (lp <= B0) throw new Error("Enter LP amount to remove.");
-      const hash = await writeContractAsync({
-        chainId,
-        address: vault,
-        abi: stableSwapMicroVaultAbi,
-        functionName: "removeLiquidity",
-        args: [lp, B0, B0],
-      });
+      const hash = await writeContractAsync(
+        withBuilderDataSuffix(chainId, {
+          chainId,
+          address: vault,
+          abi: stableSwapMicroVaultAbi,
+          functionName: "removeLiquidity",
+          args: [lp, B0, B0],
+        }),
+      );
       const wReceipt = await waitForTransactionReceipt(config, { hash });
       requireTxSuccess(wReceipt, "Remove liquidity reverted.");
       setMsg("Liquidity removed.");
@@ -417,13 +424,15 @@ export default function LiquidityPage() {
     try {
       const mu = parseUnits(normalizeAmountInput(microU) || "0", STABLE_PAIR_DECIMALS);
       const me = parseUnits(normalizeAmountInput(microE) || "0", STABLE_PAIR_DECIMALS);
-      const hash = await writeContractAsync({
-        chainId,
-        address: vault,
-        abi: stableSwapMicroVaultAbi,
-        functionName: "configureMicroPull",
-        args: [true, mu, me],
-      });
+      const hash = await writeContractAsync(
+        withBuilderDataSuffix(chainId, {
+          chainId,
+          address: vault,
+          abi: stableSwapMicroVaultAbi,
+          functionName: "configureMicroPull",
+          args: [true, mu, me],
+        }),
+      );
       const m1 = await waitForTransactionReceipt(config, { hash });
       requireTxSuccess(m1, "Micro-pull config reverted.");
       setMsg(`Micro-pull enabled. Approve USDC + ${eurStableSymbol} to the vault for keeper pulls.`);
@@ -442,13 +451,15 @@ export default function LiquidityPage() {
     setBusy("micro");
     setMsg(null);
     try {
-      const hash = await writeContractAsync({
-        chainId,
-        address: vault,
-        abi: stableSwapMicroVaultAbi,
-        functionName: "configureMicroPull",
-        args: [false, B0, B0],
-      });
+      const hash = await writeContractAsync(
+        withBuilderDataSuffix(chainId, {
+          chainId,
+          address: vault,
+          abi: stableSwapMicroVaultAbi,
+          functionName: "configureMicroPull",
+          args: [false, B0, B0],
+        }),
+      );
       const m2 = await waitForTransactionReceipt(config, { hash });
       requireTxSuccess(m2, "Opt out reverted.");
       setMsg("Micro-pull disabled.");

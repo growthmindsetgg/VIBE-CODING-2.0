@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { erc20Abi, parseUnits } from "viem";
 import { useAccount, useChainId, useWriteContract } from "wagmi";
 import { Button } from "@/components/ui/button";
+import { withBuilderDataSuffix } from "@/lib/base/builder-code";
 import { getStableVaultAddresses, protocolTreasury } from "@/lib/contracts/addresses";
 import { isStableVaultSupportedChainId } from "@/lib/chains";
 
@@ -45,13 +46,15 @@ export function MicroActions({ onInstrumentMock }: MicroActionsProps) {
       return;
     }
     try {
-      const hash = await writeContractAsync({
-        chainId,
-        address: token,
-        abi: erc20Abi,
-        functionName: "transfer",
-        args: [recipient, parseUnits(amount, 6)],
-      });
+      const hash = await writeContractAsync(
+        withBuilderDataSuffix(chainId, {
+          chainId,
+          address: token,
+          abi: erc20Abi,
+          functionName: "transfer",
+          args: [recipient, parseUnits(amount, 6)],
+        }),
+      );
       setLastTx(`${memo}: ${hash.slice(0, 10)}…`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Transaction failed");

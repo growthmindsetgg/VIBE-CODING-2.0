@@ -18,6 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { baseForexVaultAbi, baseForexVaultSimAbi } from "@/lib/abis/base-forex-vault";
+import { withBuilderDataSuffix } from "@/lib/base/builder-code";
 import { getStableVaultChainById, getStableVaultRpcHttpUrl } from "@/lib/chains";
 import { formatAllowanceHuman } from "@/lib/format-allowance";
 import { formatOnchainError } from "@/lib/format-onchain-error";
@@ -321,12 +322,14 @@ export function ForexVaultCard({
       setBusy(which === "usdc" ? "approve-usdc" : "approve-eurc");
       setMsg(null);
       try {
-        const hash = await writeContractAsync({
-          address: token,
-          abi: erc20Abi,
-          functionName: "approve",
-          args: [vault, maxUint256],
-        });
+        const hash = await writeContractAsync(
+          withBuilderDataSuffix(chainId, {
+            address: token,
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [vault, maxUint256],
+          }),
+        );
         toast.loading(`Approving ${which.toUpperCase()}…`, { id: `approve-${token}` });
         const rc = await waitForTransactionReceipt(config, { hash, chainId });
         requireTxSuccess(rc, `${which.toUpperCase()} approval reverted.`);
@@ -360,12 +363,14 @@ export function ForexVaultCard({
           args: [parsedUsdc, parsedEurc, B0, B0],
         });
       }
-      const hash = await writeContractAsync({
-        address: vault,
-        abi: baseForexVaultAbi,
-        functionName: "deposit",
-        args: [parsedUsdc, parsedEurc, B0, B0],
-      });
+      const hash = await writeContractAsync(
+        withBuilderDataSuffix(chainId, {
+          address: vault,
+          abi: baseForexVaultAbi,
+          functionName: "deposit",
+          args: [parsedUsdc, parsedEurc, B0, B0],
+        }),
+      );
       setLastTxHash(hash);
       toast.loading("Depositing into USDC/EURC market-maker…", {
         id: `deposit-${vault}`,
@@ -407,12 +412,14 @@ export function ForexVaultCard({
           args: [parsedShares, B0, B0],
         });
       }
-      const hash = await writeContractAsync({
-        address: vault,
-        abi: baseForexVaultAbi,
-        functionName: "withdraw",
-        args: [parsedShares, B0, B0],
-      });
+      const hash = await writeContractAsync(
+        withBuilderDataSuffix(chainId, {
+          address: vault,
+          abi: baseForexVaultAbi,
+          functionName: "withdraw",
+          args: [parsedShares, B0, B0],
+        }),
+      );
       setLastTxHash(hash);
       toast.loading("Withdrawing…", { id: `withdraw-${vault}` });
       const rc = await waitForTransactionReceipt(config, { hash, chainId });
