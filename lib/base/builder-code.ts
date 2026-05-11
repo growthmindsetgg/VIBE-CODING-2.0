@@ -1,3 +1,9 @@
+"use client";
+
+import { useCallback } from "react";
+import { encodeFunctionData, type Abi } from "viem";
+import { useSendTransaction, useWriteContract } from "wagmi";
+
 import { baseMainnet } from "@/lib/chains";
 
 const ERC8021_MARKER = "0080218021802180218021802180218021";
@@ -48,6 +54,28 @@ export function getBaseBuilderDataSuffix(chainId: number): `0x${string}` | undef
   return encodeBuilderCodeSuffix(code) ?? undefined;
 }
 
+/**
+ * Concatenates ERC-8021 builder-code bytes onto an existing calldata hex.
+ * Returns the original `data` unchanged when the suffix is not active.
+ */
+export function appendBuilderCodeSuffix(
+  chainId: number,
+  data: `0x${string}` | undefined,
+): `0x${string}` {
+  const suffix = getBaseBuilderDataSuffix(chainId);
+  const base = data && isHexData(data) ? data : "0x";
+  if (!suffix) return base as `0x${string}`;
+  return `${base}${suffix.slice(2)}` as `0x${string}`;
+}
+
+/**
+ * Legacy wrapper kept for backwards compatibility. Adds `dataSuffix` to a
+ * wagmi/viem request object on Base mainnet so libraries that respect the
+ * field append it before signing. Prefer {@link useBuilderAwareWriteContract}
+ * for new call sites — it pre-bakes the suffix into calldata which makes the
+ * attribution robust against any wagmi/viem version that silently drops
+ * unknown parameters.
+ */
 export function withBuilderDataSuffix<const T extends object>(
   chainId: number,
   request: T,
@@ -58,4 +86,65 @@ export function withBuilderDataSuffix<const T extends object>(
     ...request,
     dataSuffix,
   };
+}
+
+export type BuilderAwareWriteParams<TAbi extends Abi> = {
+  chainId: number;
+  address: `0x${string}`;
+  abi: TAbi;
+  functionName: string;
+  args?: readonly unknown[];
+  value?: bigint;
+  gas?: bigint;
+};
+
+/**
+ * On Base mainnet, manually ABI-encodes the call, appends the ERC-8021
+ * builder-code suffix, and dispatches via `sendTransaction`. On any other
+ * chain it falls back to a normal `writeContract`. This guarantees the
+ * suffix lands in the on-chain calldata regardless of wagmi/viem version,
+ * connector, or wallet behaviour.
+ */
+export function useBuilderAwareWriteContract() {
+  const { writeContractAsync } = useWriteContract();
+  const { sendTransactionAsync } = useSendTransaction();
+
+  return useCallback(
+    async <TAbi extends Abi>(
+      params: BuilderAwareWriteParams<TAbi>,
+    ): Promise<`0x${string}`> => {
+      const suffix = getBaseBuilderDataSuffix(params.chainId);
+
+      if (!suffix) {
+        return writeContractAsync({
+          chainId: params.chainId,
+          address: params.address,
+          abi: params.abi,
+          functionName: params.functionName,
+          args: params.args ?? [],
+          value: params.value,
+          gas: params.gas,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any);
+      }
+
+      const callData = encodeFunctionData({
+        abi: params.abi,
+        functionName: params.functionName,
+        args: params.args,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      const data = `${callData}${suffix.slice(2)}` as `0x${string}`;
+
+      return sendTransactionAsync({
+        chainId: params.chainId,
+        to: params.address,
+        data,
+        value: params.value ?? BigInt(0),
+        gas: params.gas,
+      });
+    },
+    [writeContractAsync, sendTransactionAsync],
+  );
 }

@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { erc20Abi, parseUnits } from "viem";
-import { useAccount, useChainId, useWriteContract } from "wagmi";
+import { useAccount, useChainId } from "wagmi";
 import { Button } from "@/components/ui/button";
-import { withBuilderDataSuffix } from "@/lib/base/builder-code";
+import { useBuilderAwareWriteContract } from "@/lib/base/builder-code";
 import { getStableVaultAddresses, protocolTreasury } from "@/lib/contracts/addresses";
 import { isStableVaultSupportedChainId } from "@/lib/chains";
 
@@ -18,9 +18,10 @@ type MicroActionsProps = {
 export function MicroActions({ onInstrumentMock }: MicroActionsProps) {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
-  const { writeContractAsync, isPending } = useWriteContract();
+  const writeContractAsync = useBuilderAwareWriteContract();
   const [lastTx, setLastTx] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
 
   const token = useMemo(() => {
     if (!isStableVaultSupportedChainId(chainId)) return undefined;
@@ -45,19 +46,20 @@ export function MicroActions({ onInstrumentMock }: MicroActionsProps) {
       setErr("Could not resolve payment recipient.");
       return;
     }
+    setIsPending(true);
     try {
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          chainId,
-          address: token,
-          abi: erc20Abi,
-          functionName: "transfer",
-          args: [recipient, parseUnits(amount, 6)],
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: token,
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [recipient, parseUnits(amount, 6)],
+      });
       setLastTx(`${memo}: ${hash.slice(0, 10)}…`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Transaction failed");
+    } finally {
+      setIsPending(false);
     }
   }
 

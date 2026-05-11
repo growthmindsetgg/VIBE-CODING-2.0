@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Copy, ExternalLink, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { erc20Abi, formatUnits, maxUint256, parseUnits } from "viem";
-import { useAccount, useConfig, useReadContract, useSendTransaction, useWriteContract } from "wagmi";
+import { useAccount, useConfig, useReadContract, useSendTransaction } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 
 import { WrongNetworkBanner } from "@/components/stable-vault/wrong-network-banner";
@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
 import { fetchZeroExPrice, fetchZeroExQuote } from "@/lib/aggregators/zerox";
-import { withBuilderDataSuffix } from "@/lib/base/builder-code";
+import { appendBuilderCodeSuffix, useBuilderAwareWriteContract } from "@/lib/base/builder-code";
 import { arcTestnet, getStableVaultChainById } from "@/lib/chains";
 import { formatOnchainError } from "@/lib/format-onchain-error";
 import { requireTxSuccess } from "@/lib/require-tx-success";
@@ -37,7 +37,7 @@ function shortAddr(a: `0x${string}`) {
 export default function SwapPage() {
   const config = useConfig();
   const { address, isConnected } = useAccount();
-  const { writeContractAsync } = useWriteContract();
+  const writeContractAsync = useBuilderAwareWriteContract();
   const { sendTransactionAsync } = useSendTransaction();
 
   const {
@@ -242,15 +242,13 @@ export default function SwapPage() {
     setBusy("approve");
     setLastTxHash(null);
     try {
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          chainId,
-          address: payToken,
-          abi: erc20Abi,
-          functionName: "approve",
-          args: [spender, maxUint256],
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: payToken,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [spender, maxUint256],
+      });
       const rc = await waitForTransactionReceipt(config, { hash });
       requireTxSuccess(rc, "Approval reverted.");
       setLastTxHash(hash);
@@ -273,15 +271,13 @@ export default function SwapPage() {
       if (isArc) {
         if (!vault) throw new Error("Vault not configured on Arc.");
         const minOut = (arcQuoteOut * BigInt(10_000 - slippageBps)) / BigInt(10_000);
-        hash = await writeContractAsync(
-          withBuilderDataSuffix(chainId, {
-            chainId,
-            address: vault,
-            abi: stableSwapMicroVaultAbi,
-            functionName: paySide === "USDC" ? "swapUsdcForEurc" : "swapEurcForUsdc",
-            args: [parsedIn, minOut],
-          }),
-        );
+        hash = await writeContractAsync({
+          chainId,
+          address: vault,
+          abi: stableSwapMicroVaultAbi,
+          functionName: paySide === "USDC" ? "swapUsdcForEurc" : "swapEurcForUsdc",
+          args: [parsedIn, minOut],
+        });
       } else {
         const quote = await fetchZeroExQuote({
           chainId,
@@ -292,16 +288,14 @@ export default function SwapPage() {
           slippageBps,
         });
 
-        hash = await sendTransactionAsync(
-          withBuilderDataSuffix(chainId, {
-            chainId,
-            to: quote.transaction.to,
-            data: quote.transaction.data,
-            value: quote.transaction.value,
-            gas: quote.transaction.gas,
-            gasPrice: quote.transaction.gasPrice,
-          }),
-        );
+        hash = await sendTransactionAsync({
+          chainId,
+          to: quote.transaction.to,
+          data: appendBuilderCodeSuffix(chainId, quote.transaction.data),
+          value: quote.transaction.value,
+          gas: quote.transaction.gas,
+          gasPrice: quote.transaction.gasPrice,
+        });
       }
 
       const rc = await waitForTransactionReceipt(config, { hash });

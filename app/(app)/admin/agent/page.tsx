@@ -17,7 +17,6 @@ import {
   useChainId,
   useConfig,
   useReadContract,
-  useWriteContract,
 } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { Button } from "@/components/ui/button";
@@ -26,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { WrongNetworkBanner } from "@/components/stable-vault/wrong-network-banner";
 import { forexTradingAgentAbi } from "@/lib/abis/forex-trading-agent";
-import { withBuilderDataSuffix } from "@/lib/base/builder-code";
+import { useBuilderAwareWriteContract } from "@/lib/base/builder-code";
 import { baseMainnet } from "@/lib/chains";
 import {
   BASE_MAINNET_EURC,
@@ -44,7 +43,7 @@ export default function AdminAgentPage() {
   const config = useConfig();
   const chainId = useChainId();
   const { address, isConnected } = useAccount();
-  const { writeContractAsync } = useWriteContract();
+  const writeContractAsync = useBuilderAwareWriteContract();
 
   const [unlocked, setUnlocked] = useState(false);
   const [pw, setPw] = useState("");
@@ -222,15 +221,13 @@ export default function AdminAgentPage() {
     setBusy("claim");
     setMsg(null);
     try {
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          chainId,
-          address: agent,
-          abi: forexTradingAgentAbi,
-          functionName: "claimAdminFees",
-          args: [token, claimTo.trim() as `0x${string}`, amt],
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: agent,
+        abi: forexTradingAgentAbi,
+        functionName: "claimAdminFees",
+        args: [token, claimTo.trim() as `0x${string}`, amt],
+      });
       const rc = await waitForTransactionReceipt(config, { hash, chainId });
       requireTxSuccess(rc, "claimAdminFees reverted.");
       await Promise.all([refetchUsdcFees(), refetchEurcFees()]);
@@ -262,15 +259,13 @@ export default function AdminAgentPage() {
     setBusy("setFee");
     setMsg(null);
     try {
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          chainId,
-          address: agent,
-          abi: forexTradingAgentAbi,
-          functionName: "setTradeFee",
-          args: [BigInt(Math.floor(n))],
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: agent,
+        abi: forexTradingAgentAbi,
+        functionName: "setTradeFee",
+        args: [BigInt(Math.floor(n))],
+      });
       const rc = await waitForTransactionReceipt(config, { hash, chainId });
       requireTxSuccess(rc, "setTradeFee reverted.");
       await refetchFeeBps();
@@ -291,15 +286,13 @@ export default function AdminAgentPage() {
     setBusy("setKeeper");
     setMsg(null);
     try {
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          chainId,
-          address: agent,
-          abi: forexTradingAgentAbi,
-          functionName: "setKeeper",
-          args: [keeperInput.trim() as `0x${string}`],
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: agent,
+        abi: forexTradingAgentAbi,
+        functionName: "setKeeper",
+        args: [keeperInput.trim() as `0x${string}`],
+      });
       const rc = await waitForTransactionReceipt(config, { hash, chainId });
       requireTxSuccess(rc, "setKeeper reverted.");
       await refetchKeeper();
@@ -316,14 +309,12 @@ export default function AdminAgentPage() {
     setBusy("pause");
     setMsg(null);
     try {
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          chainId,
-          address: agent,
-          abi: forexTradingAgentAbi,
-          functionName: paused ? "unpause" : "pause",
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: agent,
+        abi: forexTradingAgentAbi,
+        functionName: paused ? "unpause" : "pause",
+      });
       const rc = await waitForTransactionReceipt(config, { hash, chainId });
       requireTxSuccess(rc, "pause/unpause reverted.");
       await refetchPaused();
@@ -350,15 +341,13 @@ export default function AdminAgentPage() {
     setBusy("rebalance");
     setMsg(null);
     try {
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          chainId,
-          address: agent,
-          abi: forexTradingAgentAbi,
-          functionName: "targetRebalance",
-          args: [BigInt(Math.floor(target)), BigInt(Math.floor(maxSwap)), BigInt(0)],
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: agent,
+        abi: forexTradingAgentAbi,
+        functionName: "targetRebalance",
+        args: [BigInt(Math.floor(target)), BigInt(Math.floor(maxSwap)), BigInt(0)],
+      });
       const rc = await waitForTransactionReceipt(config, { hash, chainId });
       requireTxSuccess(rc, "targetRebalance reverted.");
       setMsg(`Rebalance executed → target ${target} bps EUR, cap ${maxSwap} bps of NAV`);

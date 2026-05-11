@@ -11,14 +11,14 @@ import {
   maxUint256,
   parseUnits,
 } from "viem";
-import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
+import { useAccount, useConfig, useReadContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { forexTradingAgentAbi, forexTradingAgentSimAbi } from "@/lib/abis/forex-trading-agent";
-import { withBuilderDataSuffix } from "@/lib/base/builder-code";
+import { useBuilderAwareWriteContract } from "@/lib/base/builder-code";
 import { getStableVaultChainById, getStableVaultRpcHttpUrl } from "@/lib/chains";
 import { formatAllowanceHuman } from "@/lib/format-allowance";
 import { formatOnchainError } from "@/lib/format-onchain-error";
@@ -90,7 +90,7 @@ export function ForexAgentCard({
 }: ForexAgentCardProps) {
   const config = useConfig();
   const { address } = useAccount();
-  const { writeContractAsync } = useWriteContract();
+  const writeContractAsync = useBuilderAwareWriteContract();
 
   const [tab, setTab] = useState<Tab>("deposit");
   const [usdcAmt, setUsdcAmt] = useState("10");
@@ -339,14 +339,13 @@ export function ForexAgentCard({
       setBusy(which === "usdc" ? "approve-usdc" : "approve-eurc");
       setMsg(null);
       try {
-        const hash = await writeContractAsync(
-          withBuilderDataSuffix(chainId, {
-            address: token,
-            abi: erc20Abi,
-            functionName: "approve",
-            args: [agent, maxUint256],
-          }),
-        );
+        const hash = await writeContractAsync({
+          chainId,
+          address: token,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [agent, maxUint256],
+        });
         toast.loading(`Approving ${which.toUpperCase()}…`, { id: `approve-${token}` });
         const rc = await waitForTransactionReceipt(config, { hash, chainId });
         requireTxSuccess(rc, `${which.toUpperCase()} approval reverted.`);
@@ -380,14 +379,13 @@ export function ForexAgentCard({
           args: [parsedUsdc, parsedEurc, B0],
         });
       }
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          address: agent,
-          abi: forexTradingAgentAbi,
-          functionName: "deposit",
-          args: [parsedUsdc, parsedEurc, B0],
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: agent,
+        abi: forexTradingAgentAbi,
+        functionName: "deposit",
+        args: [parsedUsdc, parsedEurc, B0],
+      });
       setLastTxHash(hash);
       toast.loading("Depositing into trading agent…", { id: `agent-deposit-${agent}` });
       const rc = await waitForTransactionReceipt(config, { hash, chainId });
@@ -427,14 +425,13 @@ export function ForexAgentCard({
           args: [parsedShares, B0, B0],
         });
       }
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          address: agent,
-          abi: forexTradingAgentAbi,
-          functionName: "withdraw",
-          args: [parsedShares, B0, B0],
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: agent,
+        abi: forexTradingAgentAbi,
+        functionName: "withdraw",
+        args: [parsedShares, B0, B0],
+      });
       setLastTxHash(hash);
       toast.loading("Withdrawing…", { id: `agent-withdraw-${agent}` });
       const rc = await waitForTransactionReceipt(config, { hash, chainId });

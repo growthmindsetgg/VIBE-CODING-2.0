@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { formatUnits, isAddress } from "viem";
-import { useAccount, useConfig, useReadContract, useWriteContract } from "wagmi";
+import { useAccount, useConfig, useReadContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { requireTxSuccess } from "@/lib/require-tx-success";
 import { WrongNetworkBanner } from "@/components/stable-vault/wrong-network-banner";
@@ -16,7 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
-import { withBuilderDataSuffix } from "@/lib/base/builder-code";
+import { useBuilderAwareWriteContract } from "@/lib/base/builder-code";
 import { STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
 
 const SESSION_KEY = "vibefunds_admin_unlocked";
@@ -25,7 +25,7 @@ const ADMIN_PASSWORD = "growthlive123$";
 export default function AdminVaultPage() {
   const config = useConfig();
   const { address, isConnected } = useAccount();
-  const { writeContractAsync } = useWriteContract();
+  const writeContractAsync = useBuilderAwareWriteContract();
   const { vault, chainId, isSupportedChain, eurStableSymbol } = useStableVaultAddresses();
 
   const [unlocked, setUnlocked] = useState(false);
@@ -113,15 +113,13 @@ export default function AdminVaultPage() {
     setBusy("nudge");
     setMsg(null);
     try {
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          chainId,
-          address: vault,
-          abi: stableSwapMicroVaultAbi,
-          functionName: "nudgePool",
-          args: [],
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: vault,
+        abi: stableSwapMicroVaultAbi,
+        functionName: "nudgePool",
+        args: [],
+      });
       const rc = await waitForTransactionReceipt(config, { hash });
       requireTxSuccess(rc, "nudgePool reverted.");
       setMsg("nudgePool done.");
@@ -143,15 +141,13 @@ export default function AdminVaultPage() {
     setBusy("micro");
     setMsg(null);
     try {
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          chainId,
-          address: vault,
-          abi: stableSwapMicroVaultAbi,
-          functionName: "microPullAndNudge",
-          args: [u as `0x${string}`],
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: vault,
+        abi: stableSwapMicroVaultAbi,
+        functionName: "microPullAndNudge",
+        args: [u as `0x${string}`],
+      });
       const rc2 = await waitForTransactionReceipt(config, { hash });
       requireTxSuccess(rc2, "microPullAndNudge reverted.");
       setMsg("microPullAndNudge done.");

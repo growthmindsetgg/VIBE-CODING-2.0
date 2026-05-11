@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatUnits, isAddress, parseUnits } from "viem";
-import { useAccount, useConfig, useChainId, useReadContract, useWriteContract } from "wagmi";
+import { useAccount, useConfig, useChainId, useReadContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { WrongNetworkBanner } from "@/components/stable-vault/wrong-network-banner";
 import { baseForexVaultAbi } from "@/lib/abis/base-forex-vault";
-import { withBuilderDataSuffix } from "@/lib/base/builder-code";
+import { useBuilderAwareWriteContract } from "@/lib/base/builder-code";
 import { baseMainnet } from "@/lib/chains";
 import {
   BASE_MAINNET_EURC,
@@ -37,7 +37,7 @@ export default function AdminForexPage() {
   const config = useConfig();
   const chainId = useChainId();
   const { address, isConnected } = useAccount();
-  const { writeContractAsync } = useWriteContract();
+  const writeContractAsync = useBuilderAwareWriteContract();
 
   const [unlocked, setUnlocked] = useState(false);
   const [pw, setPw] = useState("");
@@ -169,15 +169,13 @@ export default function AdminForexPage() {
     setBusy("claim");
     setMsg(null);
     try {
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          chainId,
-          address: vault,
-          abi: baseForexVaultAbi,
-          functionName: "claimAdminFees",
-          args: [token, claimTo.trim() as `0x${string}`, amt],
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: vault,
+        abi: baseForexVaultAbi,
+        functionName: "claimAdminFees",
+        args: [token, claimTo.trim() as `0x${string}`, amt],
+      });
       const rc = await waitForTransactionReceipt(config, { hash, chainId });
       requireTxSuccess(rc, "claimAdminFees reverted.");
       await Promise.all([refetchUsdcFees(), refetchEurcFees()]);
@@ -209,15 +207,13 @@ export default function AdminForexPage() {
     setBusy("setFee");
     setMsg(null);
     try {
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          chainId,
-          address: vault,
-          abi: baseForexVaultAbi,
-          functionName: "setWithdrawalFee",
-          args: [BigInt(Math.floor(n))],
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: vault,
+        abi: baseForexVaultAbi,
+        functionName: "setWithdrawalFee",
+        args: [BigInt(Math.floor(n))],
+      });
       const rc = await waitForTransactionReceipt(config, { hash, chainId });
       requireTxSuccess(rc, "setWithdrawalFee reverted.");
       await refetchFeeBps();
@@ -234,14 +230,12 @@ export default function AdminForexPage() {
     setBusy("pause");
     setMsg(null);
     try {
-      const hash = await writeContractAsync(
-        withBuilderDataSuffix(chainId, {
-          chainId,
-          address: vault,
-          abi: baseForexVaultAbi,
-          functionName: paused ? "unpause" : "pause",
-        }),
-      );
+      const hash = await writeContractAsync({
+        chainId,
+        address: vault,
+        abi: baseForexVaultAbi,
+        functionName: paused ? "unpause" : "pause",
+      });
       const rc = await waitForTransactionReceipt(config, { hash, chainId });
       requireTxSuccess(rc, "pause/unpause reverted.");
       await refetchPaused();
