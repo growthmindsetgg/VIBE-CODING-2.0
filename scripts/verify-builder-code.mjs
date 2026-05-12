@@ -5,7 +5,7 @@ import https from "node:https";
 
 const ROOT = "https://vibefundarc.vercel.app";
 const ENTRY_PATHS = ["/swap", "/forex", "/stake", "/liquidity"];
-const BUILDER_CODE = "bc_14g52xrb";
+const BUILDER_CODE = "bc_l4g52xrb";
 const ERC8021_MARKER_FRAG = "8021802180218021"; // partial — enough to identify
 
 function get(url) {
