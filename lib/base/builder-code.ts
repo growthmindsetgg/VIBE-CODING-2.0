@@ -7,7 +7,7 @@ import { useSendTransaction, useWriteContract } from "wagmi";
 import { baseMainnet } from "@/lib/chains";
 
 const ERC8021_MARKER = "0080218021802180218021802180218021";
-const DEFAULT_BASE_BUILDER_CODE = "bc_l4g52xrb";
+const DEFAULT_BASE_BUILDER_CODE = "bc_beg0pkcm";
 
 function isHexData(value: string): value is `0x${string}` {
   return /^0x[0-9a-fA-F]+$/.test(value);
