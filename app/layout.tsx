@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     "Gamified mutual funds powered by on-chain agents. Create funds, train agents, trade hybrid ERC-404-style shares on Arc testnet.",
   other: {
     // Base app ownership verification (base.dev / Base app registration)
-    "base:app_id": "69f9b1ca42d4fe010f1c2960",
+    "base:app_id": "6a01d7629ee68cd142d1b1ba",
   },
 };
 
