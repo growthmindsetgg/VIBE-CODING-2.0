@@ -9,6 +9,10 @@ import { baseMainnet } from "@/lib/chains";
 const ERC8021_MARKER = "0080218021802180218021802180218021";
 const DEFAULT_BASE_BUILDER_CODE = "bc_beg0pkcm";
 
+export function sanitizeBuilderCode(code: string): string {
+  return code.replace(/[\x00-\x1F\x7F-\x9F\u200B-\u200D\uFEFF]/g, "").trim();
+}
+
 function isHexData(value: string): value is `0x${string}` {
   return /^0x[0-9a-fA-F]+$/.test(value);
 }
@@ -24,7 +28,7 @@ function bytesToHex(bytes: Uint8Array): string {
  * Format: [len:1][ascii(code)][0x00][0x8021... marker]
  */
 export function encodeBuilderCodeSuffix(builderCode: string): `0x${string}` | null {
-  const clean = builderCode.trim();
+  const clean = sanitizeBuilderCode(builderCode);
   if (!clean) return null;
   const bytes = new TextEncoder().encode(clean);
   if (bytes.length === 0 || bytes.length > 255) return null;
@@ -44,14 +48,16 @@ export function encodeBuilderCodeSuffix(builderCode: string): `0x${string}` | nu
 export function getBaseBuilderDataSuffix(chainId: number): `0x${string}` | undefined {
   if (chainId !== baseMainnet.id) return undefined;
 
-  const explicitSuffix = process.env.NEXT_PUBLIC_BASE_BUILDER_CODE_SUFFIX?.trim();
+  const explicitSuffix = sanitizeBuilderCode(
+    process.env.NEXT_PUBLIC_BASE_BUILDER_CODE_SUFFIX ?? "",
+  );
   if (explicitSuffix && isHexData(explicitSuffix)) {
     return explicitSuffix;
   }
 
-  const code =
-    process.env.NEXT_PUBLIC_BASE_BUILDER_CODE?.trim() || DEFAULT_BASE_BUILDER_CODE;
-  return encodeBuilderCodeSuffix(code) ?? undefined;
+  const code = sanitizeBuilderCode(process.env.NEXT_PUBLIC_BASE_BUILDER_CODE ?? "");
+  const resolved = code || DEFAULT_BASE_BUILDER_CODE;
+  return encodeBuilderCodeSuffix(resolved) ?? undefined;
 }
 
 /**
