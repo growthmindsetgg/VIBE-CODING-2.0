@@ -1,0 +1,2 @@
+{"data":{"source":"shell"},"hypothesisId":"H5","message":"manual ingest test","runId":"connectivity-test","sessionId":"62fbb4","timestamp":1778601377742,"location":"manual"}
+{"sessionId":"62fbb4","runId":"connectivity-test-2","hypothesisId":"H5","location":"manual","message":"status check","data":{"source":"shell"},"timestamp":0}
