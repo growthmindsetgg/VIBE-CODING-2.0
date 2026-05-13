@@ -1,9 +1,10 @@
-// Verify Base Builder Code is baked into the deployed JS bundle on vibefundarc.
-// Usage: node scripts/verify-builder-code.mjs
+// Verify Base Builder Code is baked into the deployed JS bundle on vibefunds.app.
+// Usage: node scripts/verify-builder-code.mjs [origin]
+//   origin defaults to https://www.vibefunds.app
 
 import https from "node:https";
 
-const ROOT = "https://vibefundarc.vercel.app";
+const ROOT = (process.argv[2] || "https://www.vibefunds.app").replace(/\/$/, "");
 const ENTRY_PATHS = ["/swap", "/forex", "/stake", "/liquidity"];
 const BUILDER_CODE = "bc_beg0pkcm";
 const ERC8021_MARKER_FRAG = "8021802180218021"; // partial — enough to identify
