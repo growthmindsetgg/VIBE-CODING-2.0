@@ -1,6 +1,7 @@
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
 import { http } from "wagmi";
 
+import { BASE_BUILDER_DATA_SUFFIX } from "@/lib/base/builder-code";
 import { arcTestnet, baseMainnet, monadMainnet } from "@/lib/chains";
 
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
@@ -28,4 +29,7 @@ export const wagmiConfig = getDefaultConfig({
       process.env.NEXT_PUBLIC_MONAD_RPC_URL?.trim() || monadMainnet.rpcUrls.default.http[0],
     ),
   },
+  ...(BASE_BUILDER_DATA_SUFFIX
+    ? { dataSuffix: BASE_BUILDER_DATA_SUFFIX }
+    : {}),
 });

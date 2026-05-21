@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
 import { fetchZeroExPrice, fetchZeroExQuote } from "@/lib/aggregators/zerox";
-import { appendBuilderCodeSuffix, useBuilderAwareWriteContract } from "@/lib/base/builder-code";
+import { BASE_BUILDER_DATA_SUFFIX, useBuilderAwareWriteContract } from "@/lib/base/builder-code";
 import { arcTestnet, getStableVaultChainById } from "@/lib/chains";
 import { formatOnchainError } from "@/lib/format-onchain-error";
 import { requireTxSuccess } from "@/lib/require-tx-success";
@@ -291,10 +291,13 @@ export default function SwapPage() {
         hash = await sendTransactionAsync({
           chainId,
           to: quote.transaction.to,
-          data: appendBuilderCodeSuffix(chainId, quote.transaction.data),
+          data: quote.transaction.data,
           value: quote.transaction.value,
           gas: quote.transaction.gas,
           gasPrice: quote.transaction.gasPrice,
+          ...(BASE_BUILDER_DATA_SUFFIX
+            ? { dataSuffix: BASE_BUILDER_DATA_SUFFIX }
+            : {}),
         });
       }
 
