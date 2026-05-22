@@ -35,7 +35,7 @@ export default function StakePage() {
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
       {/* Header */}
       <div className="space-y-2">
-        <h1 className="font-[family-name:var(--font-display)] text-4xl font-bold uppercase tracking-tight">
+        <h1 className="font-[family-name:var(--font-display)] text-3xl font-bold uppercase tracking-tight md:text-4xl">
           Stake
         </h1>
         <p className="max-w-2xl font-mono text-sm text-zinc-700">

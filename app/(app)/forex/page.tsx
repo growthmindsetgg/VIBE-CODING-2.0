@@ -58,7 +58,7 @@ export default function ForexPage() {
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <div className="space-y-2">
         <div className="flex items-center gap-3">
-          <h1 className="font-[family-name:var(--font-display)] text-4xl font-bold uppercase tracking-tight">
+          <h1 className="font-[family-name:var(--font-display)] text-3xl font-bold uppercase tracking-tight md:text-4xl">
             Forex Funds
           </h1>
           <span className="flex items-center gap-1.5 rounded-md border-2 border-emerald-600 bg-emerald-50 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-800">
