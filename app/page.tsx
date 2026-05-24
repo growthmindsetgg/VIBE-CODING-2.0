@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
+import { BaseAppLandingRedirect } from "@/components/base-app-landing-redirect";
+
 const GITHUB_URL = "https://github.com/growthmindsetgg/vibefund";
 
 const ticker =
@@ -9,6 +11,7 @@ const ticker =
 export default function HomePage() {
   return (
     <div className="flex min-h-screen flex-col bg-[#f5f5f0] text-zinc-900">
+      <BaseAppLandingRedirect />
       <header className="flex flex-wrap items-center justify-between gap-4 border-b-[3px] border-black bg-black px-4 py-4 sm:px-8">
         <Link
           href="/"
@@ -59,7 +62,9 @@ export default function HomePage() {
             Agent funds on Arc
           </span>
           <h1 className="mt-6 font-[family-name:var(--font-display)] text-4xl font-bold uppercase leading-[0.95] tracking-tight text-black sm:text-5xl lg:text-6xl">
-            Say hello to VibeFunds
+            Trade while you sleep.
+            <br />
+            Earn while you live.
           </h1>
           <p className="mt-4 max-w-lg text-lg font-semibold text-zinc-800 sm:text-xl">
             Create funds, train agents, trade hybrid share units — all wired for Arc testnet.

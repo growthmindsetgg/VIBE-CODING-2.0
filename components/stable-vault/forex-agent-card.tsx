@@ -20,8 +20,8 @@ import { Label } from "@/components/ui/label";
 import { forexTradingAgentAbi, forexTradingAgentSimAbi } from "@/lib/abis/forex-trading-agent";
 import { useBuilderAwareWriteContract } from "@/lib/base/builder-code";
 import { getStableVaultChainById, getStableVaultRpcHttpUrl } from "@/lib/chains";
+import { toastError } from "@/lib/errors";
 import { formatAllowanceHuman } from "@/lib/format-allowance";
-import { formatOnchainError } from "@/lib/format-onchain-error";
 import { requireTxSuccess } from "@/lib/require-tx-success";
 import { B0, STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
 
@@ -353,11 +353,7 @@ export function ForexAgentCard({
         else await refetchAllowEurc();
         toast.success(`${which.toUpperCase()} approved`, { id: `approve-${token}` });
       } catch (err) {
-        const detail = formatOnchainError(err);
-        setMsg(detail);
-        toast.error(`Approve ${which.toUpperCase()} failed: ${detail}`, {
-          id: `approve-${token}`,
-        });
+        toastError(err);
       } finally {
         setBusy(null);
       }
@@ -393,9 +389,7 @@ export function ForexAgentCard({
       await refetchAll();
       toast.success("Deposited", { id: `agent-deposit-${agent}` });
     } catch (err) {
-      const detail = formatOnchainError(err);
-      setMsg(detail);
-      toast.error(`Deposit failed: ${detail}`, { id: `agent-deposit-${agent}` });
+      toastError(err);
     } finally {
       setBusy(null);
     }
@@ -439,9 +433,7 @@ export function ForexAgentCard({
       await refetchAll();
       toast.success("Withdrawn (no fee)", { id: `agent-withdraw-${agent}` });
     } catch (err) {
-      const detail = formatOnchainError(err);
-      setMsg(detail);
-      toast.error(`Withdraw failed: ${detail}`, { id: `agent-withdraw-${agent}` });
+      toastError(err);
     } finally {
       setBusy(null);
     }

@@ -20,8 +20,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { forexPoolAbi, forexPoolSimAbi } from "@/lib/abis/forex-pool";
 import { arcTestnet } from "@/lib/chains";
+import { toastError } from "@/lib/errors";
 import { formatAllowanceHuman } from "@/lib/format-allowance";
-import { formatOnchainError } from "@/lib/format-onchain-error";
 import { requireTxSuccess } from "@/lib/require-tx-success";
 import { B0, STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
 
@@ -257,9 +257,7 @@ export function LiquidityPanel({ pool, usdc, eurc, isArc, isConnected, onChanged
         else await refetchAllowanceEurc();
         toast.success(`${token.toUpperCase()} approved`, { id: `lp-approve-${token}` });
       } catch (err) {
-        const detail = formatOnchainError(err);
-        setMsg(detail);
-        toast.error(`Approve failed: ${detail}`, { id: `lp-approve-${token}` });
+        toastError(err);
       } finally {
         setBusy(null);
       }
@@ -301,9 +299,7 @@ export function LiquidityPanel({ pool, usdc, eurc, isArc, isConnected, onChanged
       await refetchAll();
       toast.success("Liquidity added", { id: "lp-add" });
     } catch (err) {
-      const detail = formatOnchainError(err);
-      setMsg(detail);
-      toast.error(`Add liquidity failed: ${detail}`, { id: "lp-add" });
+      toastError(err);
     } finally {
       setBusy(null);
     }
@@ -346,9 +342,7 @@ export function LiquidityPanel({ pool, usdc, eurc, isArc, isConnected, onChanged
       await refetchAll();
       toast.success("Liquidity withdrawn", { id: "lp-remove" });
     } catch (err) {
-      const detail = formatOnchainError(err);
-      setMsg(detail);
-      toast.error(`Remove liquidity failed: ${detail}`, { id: "lp-remove" });
+      toastError(err);
     } finally {
       setBusy(null);
     }

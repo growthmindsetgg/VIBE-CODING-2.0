@@ -20,8 +20,8 @@ import { Label } from "@/components/ui/label";
 import { stableYieldVaultAbi, stableYieldVaultSimAbi } from "@/lib/abis/stable-yield-vault";
 import { useBuilderAwareWriteContract } from "@/lib/base/builder-code";
 import { getStableVaultChainById, getStableVaultRpcHttpUrl } from "@/lib/chains";
+import { toastError } from "@/lib/errors";
 import { formatAllowanceHuman } from "@/lib/format-allowance";
-import { formatOnchainError } from "@/lib/format-onchain-error";
 import { requireTxSuccess } from "@/lib/require-tx-success";
 import { B0, STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
 
@@ -213,9 +213,7 @@ export function StakePoolCard({
       await refetchAllowance();
       toast.success(`${assetSymbol} approved for ${shareSymbol}`, { id: `approve-${vault}` });
     } catch (err) {
-      const detail = formatOnchainError(err);
-      setMsg(detail);
-      toast.error(`Approve failed: ${detail}`, { id: `approve-${vault}` });
+      toastError(err);
     } finally {
       setBusy(null);
     }
@@ -251,9 +249,7 @@ export function StakePoolCard({
         id: `deposit-${vault}`,
       });
     } catch (err) {
-      const detail = formatOnchainError(err);
-      setMsg(detail);
-      toast.error(`Stake failed: ${detail}`, { id: `deposit-${vault}` });
+      toastError(err);
     } finally {
       setBusy(null);
     }
@@ -300,9 +296,7 @@ export function StakePoolCard({
       await refetchAll();
       toast.success(`Unstaked ${amount} ${assetSymbol}`, { id: `withdraw-${vault}` });
     } catch (err) {
-      const detail = formatOnchainError(err);
-      setMsg(detail);
-      toast.error(`Unstake failed: ${detail}`, { id: `withdraw-${vault}` });
+      toastError(err);
     } finally {
       setBusy(null);
     }

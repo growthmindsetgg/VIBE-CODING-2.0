@@ -32,7 +32,7 @@ import {
   BASE_MAINNET_USDC,
   forexTradingAgentAddress,
 } from "@/lib/contracts/addresses";
-import { formatOnchainError } from "@/lib/format-onchain-error";
+import { toastError } from "@/lib/errors";
 import { requireTxSuccess } from "@/lib/require-tx-success";
 import { STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
 
@@ -233,7 +233,7 @@ export default function AdminAgentPage() {
       await Promise.all([refetchUsdcFees(), refetchEurcFees()]);
       setMsg(`Claimed ${claimAmount} ${claimToken.toUpperCase()} → ${claimTo.trim()}`);
     } catch (err) {
-      setMsg(formatOnchainError(err));
+      toastError(err);
     } finally {
       setBusy(null);
     }
@@ -271,7 +271,7 @@ export default function AdminAgentPage() {
       await refetchFeeBps();
       setMsg(`Trade commission → ${n} bps`);
     } catch (err) {
-      setMsg(formatOnchainError(err));
+      toastError(err);
     } finally {
       setBusy(null);
     }
@@ -298,7 +298,7 @@ export default function AdminAgentPage() {
       await refetchKeeper();
       setMsg(`Keeper rotated to ${keeperInput.trim()}`);
     } catch (err) {
-      setMsg(formatOnchainError(err));
+      toastError(err);
     } finally {
       setBusy(null);
     }
@@ -320,7 +320,7 @@ export default function AdminAgentPage() {
       await refetchPaused();
       setMsg(paused ? "Unpaused." : "Paused — new deposits blocked.");
     } catch (err) {
-      setMsg(formatOnchainError(err));
+      toastError(err);
     } finally {
       setBusy(null);
     }
@@ -352,7 +352,7 @@ export default function AdminAgentPage() {
       requireTxSuccess(rc, "targetRebalance reverted.");
       setMsg(`Rebalance executed → target ${target} bps EUR, cap ${maxSwap} bps of NAV`);
     } catch (err) {
-      setMsg(formatOnchainError(err));
+      toastError(err);
     } finally {
       setBusy(null);
     }

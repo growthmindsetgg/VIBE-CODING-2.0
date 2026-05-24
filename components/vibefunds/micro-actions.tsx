@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useBuilderAwareWriteContract } from "@/lib/base/builder-code";
 import { getStableVaultAddresses, protocolTreasury } from "@/lib/contracts/addresses";
 import { isStableVaultSupportedChainId } from "@/lib/chains";
+import { toastError } from "@/lib/errors";
 
 const MICRO_USDC = "0.25";
 const INSTRUMENT_USDC = "1";
@@ -57,7 +58,7 @@ export function MicroActions({ onInstrumentMock }: MicroActionsProps) {
       });
       setLastTx(`${memo}: ${hash.slice(0, 10)}…`);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Transaction failed");
+      toastError(e);
     } finally {
       setIsPending(false);
     }

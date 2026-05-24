@@ -4,6 +4,7 @@ import { useSwitchChain } from "wagmi";
 
 import { SUPPORTED_STABLE_VAULT_CHAINS } from "@/lib/chains";
 import { Button } from "@/components/ui/button";
+import { ChainLogo } from "@/components/ui/chain-logo";
 
 type WrongNetworkBannerProps = {
   className?: string;
@@ -32,9 +33,10 @@ export function WrongNetworkBanner({ className }: WrongNetworkBannerProps) {
             size="sm"
             variant="outline"
             disabled={isPending}
-            className="font-mono text-xs"
+            className="inline-flex items-center gap-1.5 font-mono text-xs"
             onClick={() => switchChain?.({ chainId: c.id })}
           >
+            <ChainLogo chainId={c.id} className="size-4" />
             {c.name}
           </Button>
         ))}

@@ -26,7 +26,7 @@ import {
   BASE_MAINNET_USDC,
   baseForexVaultAddress,
 } from "@/lib/contracts/addresses";
-import { formatOnchainError } from "@/lib/format-onchain-error";
+import { toastError } from "@/lib/errors";
 import { requireTxSuccess } from "@/lib/require-tx-success";
 import { STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
 
@@ -181,7 +181,7 @@ export default function AdminForexPage() {
       await Promise.all([refetchUsdcFees(), refetchEurcFees()]);
       setMsg(`Claimed ${claimAmount} ${claimToken.toUpperCase()} → ${claimTo.trim()}`);
     } catch (err) {
-      setMsg(formatOnchainError(err));
+      toastError(err);
     } finally {
       setBusy(null);
     }
@@ -219,7 +219,7 @@ export default function AdminForexPage() {
       await refetchFeeBps();
       setMsg(`Withdrawal fee → ${n} bps`);
     } catch (err) {
-      setMsg(formatOnchainError(err));
+      toastError(err);
     } finally {
       setBusy(null);
     }
@@ -241,7 +241,7 @@ export default function AdminForexPage() {
       await refetchPaused();
       setMsg(paused ? "Unpaused." : "Paused — new deposits blocked.");
     } catch (err) {
-      setMsg(formatOnchainError(err));
+      toastError(err);
     } finally {
       setBusy(null);
     }

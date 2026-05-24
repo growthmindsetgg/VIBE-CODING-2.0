@@ -6,22 +6,27 @@ import { usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useChainId } from "wagmi";
 import { Toaster } from "sonner";
-import { Menu, X } from "lucide-react";
+import { Info, Menu, X } from "lucide-react";
 import { getStableVaultChainById, isStableVaultSupportedChainId } from "@/lib/chains";
 import { AppTopNav } from "@/components/layout/app-top-nav";
+import { ChainLogo } from "@/components/ui/chain-logo";
 import { cn } from "@/lib/utils";
 
-const navFunds = [
-  { href: "/marketplace", label: "Marketplace" },
-  { href: "/my-funds", label: "My funds" },
+type NavItem = { href: string; label: string; comingSoon?: boolean };
+
+const navFunds: readonly NavItem[] = [
+  { href: "/marketplace", label: "Marketplace", comingSoon: true },
+  { href: "/my-funds", label: "My funds", comingSoon: true },
   { href: "/swap", label: "Swap" },
   { href: "/liquidity", label: "Pool" },
   { href: "/stake", label: "Stake" },
   { href: "/forex", label: "Forex" },
-  { href: "/create-fund", label: "Create fund" },
-] as const;
+  { href: "/create-fund", label: "Create fund", comingSoon: true },
+];
 
-const navAgent = [{ href: "/train-agent", label: "Train agent" }] as const;
+const navAgent: readonly NavItem[] = [
+  { href: "/train-agent", label: "Train agent", comingSoon: true },
+];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -120,7 +125,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         <div className="flex items-center justify-between border-b-[3px] border-black">
           <Link
-            href="/marketplace"
+            href="/swap"
             className="flex-1 px-4 py-5 font-[family-name:var(--font-display)] text-lg font-bold tracking-tight hover:bg-[#e8e4ff]"
           >
             VIBEFUNDS
@@ -140,17 +145,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <ul className="space-y-0.5">
               {navFunds.map((item) => (
                 <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      "block rounded-md border-[3px] border-transparent px-3 py-3 transition-colors md:py-2",
-                      active(item.href)
-                        ? "border-black bg-black text-white shadow-[3px_3px_0_0_#9146FF]"
-                        : "hover:border-black/20 hover:bg-white/80",
-                    )}
-                  >
-                    {item.label}
-                  </Link>
+                  {item.comingSoon ? (
+                    <div
+                      aria-disabled="true"
+                      tabIndex={-1}
+                      aria-label={`${item.label}, coming soon`}
+                      className={cn(
+                        "block cursor-not-allowed rounded-md border-[3px] border-transparent px-3 py-3 md:py-2",
+                        active(item.href) &&
+                          "border-black bg-black text-white shadow-[3px_3px_0_0_#9146FF]",
+                      )}
+                    >
+                      <span className="opacity-50">{item.label}</span>
+                      <span className="ml-2 inline-block rounded-full bg-[#9146FF] px-2 py-0.5 text-xs font-bold text-white">
+                        SOON
+                      </span>
+                    </div>
+                  ) : (
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        "block rounded-md border-[3px] border-transparent px-3 py-3 transition-colors md:py-2",
+                        active(item.href)
+                          ? "border-black bg-black text-white shadow-[3px_3px_0_0_#9146FF]"
+                          : "hover:border-black/20 hover:bg-white/80",
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>
@@ -160,17 +183,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <ul className="space-y-0.5">
               {navAgent.map((item) => (
                 <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      "block rounded-md border-[3px] border-transparent px-3 py-3 transition-colors md:py-2",
-                      active(item.href)
-                        ? "border-black bg-black text-white shadow-[3px_3px_0_0_#9146FF]"
-                        : "hover:border-black/20 hover:bg-white/80",
-                    )}
-                  >
-                    {item.label}
-                  </Link>
+                  {item.comingSoon ? (
+                    <div
+                      aria-disabled="true"
+                      tabIndex={-1}
+                      aria-label={`${item.label}, coming soon`}
+                      className={cn(
+                        "block cursor-not-allowed rounded-md border-[3px] border-transparent px-3 py-3 md:py-2",
+                        active(item.href) &&
+                          "border-black bg-black text-white shadow-[3px_3px_0_0_#9146FF]",
+                      )}
+                    >
+                      <span className="opacity-50">{item.label}</span>
+                      <span className="ml-2 inline-block rounded-full bg-[#9146FF] px-2 py-0.5 text-xs font-bold text-white">
+                        SOON
+                      </span>
+                    </div>
+                  ) : (
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        "block rounded-md border-[3px] border-transparent px-3 py-3 transition-colors md:py-2",
+                        active(item.href)
+                          ? "border-black bg-black text-white shadow-[3px_3px_0_0_#9146FF]"
+                          : "hover:border-black/20 hover:bg-white/80",
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>
@@ -184,6 +225,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             tabIndex={-1}
             title=""
           />
+          <Link
+            href="/"
+            className="flex items-center gap-2 rounded-md border-[3px] border-transparent px-3 py-3 text-sm font-semibold uppercase tracking-wide transition-colors hover:border-black/20 hover:bg-white/80 md:py-2"
+          >
+            <Info className="size-6" aria-hidden />
+            About
+          </Link>
+          <div className="my-2 border-t border-black/10" aria-hidden />
           <Link
             href="/"
             className="inline-block py-2 text-xs font-medium text-[#5c16c5] underline-offset-2 hover:underline md:py-0"
@@ -209,7 +258,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Menu className="size-6" aria-hidden />
           </button>
           <Link
-            href="/marketplace"
+            href="/swap"
             className="font-[family-name:var(--font-display)] text-base font-bold tracking-tight"
           >
             VIBEFUNDS
@@ -229,10 +278,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <header className="hidden flex-wrap items-center justify-end gap-3 border-b-[3px] border-black bg-[#dbeafe] px-4 py-3 md:flex">
           <span
             className={cn(
-              "mr-auto rounded-md border-2 border-black px-2 py-1 font-mono text-xs font-bold shadow-[2px_2px_0_0_#000]",
+              "mr-auto inline-flex items-center gap-1.5 rounded-md border-2 border-black px-2 py-1 font-mono text-xs font-bold shadow-[2px_2px_0_0_#000]",
               chainBadgeTone,
             )}
           >
+            <ChainLogo chainId={chainId} className="size-3.5" />
             {chainLabel}
           </span>
           <ConnectButton

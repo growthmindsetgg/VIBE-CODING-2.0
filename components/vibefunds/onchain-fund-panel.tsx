@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fundManagerAbi } from "@/lib/abis/fund-manager";
 import { usdcAddress } from "@/lib/contracts/addresses";
+import { toastError } from "@/lib/errors";
 import type { VibeFund } from "@/lib/types/fund";
 import { arcTestnet } from "@/lib/chains/arc";
 import { requireTxSuccess } from "@/lib/require-tx-success";
@@ -95,7 +96,7 @@ export function OnchainFundPanel({ fund }: OnchainFundPanelProps) {
         if (typeof out === "string") setMsg(out);
         else setMsg(`${label} submitted`);
       } catch (e) {
-        setMsg(e instanceof Error ? e.message : "Transaction failed");
+        toastError(e);
       } finally {
         setBusy(null);
       }

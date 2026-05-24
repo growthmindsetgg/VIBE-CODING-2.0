@@ -17,6 +17,7 @@ import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
 import { fetchZeroExPrice, fetchZeroExQuote } from "@/lib/aggregators/zerox";
 import { BASE_BUILDER_DATA_SUFFIX, useBuilderAwareWriteContract } from "@/lib/base/builder-code";
 import { arcTestnet, getStableVaultChainById } from "@/lib/chains";
+import { toastError } from "@/lib/errors";
 import { formatOnchainError } from "@/lib/format-onchain-error";
 import { requireTxSuccess } from "@/lib/require-tx-success";
 import { B0, STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
@@ -255,7 +256,7 @@ export default function SwapPage() {
       toast.success("Approval confirmed", { description: shortAddr(hash) });
       await refetchAllowance();
     } catch (e) {
-      toast.error(formatOnchainError(e));
+      toastError(e);
     } finally {
       setBusy(null);
     }
@@ -319,7 +320,7 @@ export default function SwapPage() {
         ),
       });
     } catch (e) {
-      toast.error(formatOnchainError(e));
+      toastError(e);
     } finally {
       setBusy(null);
     }
@@ -457,7 +458,7 @@ export default function SwapPage() {
           {needApproval && parsedIn > B0 ? (
             <Button
               type="button"
-              variant="brutalOutline"
+              variant="brutalPrimary"
               className="w-full"
               disabled={busy !== null}
               onClick={onApprove}

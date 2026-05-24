@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { stableSwapMicroVaultAbi } from "@/lib/abis/stable-swap-micro-vault";
 import { useBuilderAwareWriteContract } from "@/lib/base/builder-code";
+import { toastError } from "@/lib/errors";
 import { STABLE_TOKEN_DECIMALS } from "@/lib/stable-vault/constants";
 
 const SESSION_KEY = "vibefunds_admin_unlocked";
@@ -125,7 +126,7 @@ export default function AdminVaultPage() {
       setMsg("nudgePool done.");
       await refreshPool();
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Failed");
+      toastError(e);
     } finally {
       setBusy(null);
     }
@@ -153,7 +154,7 @@ export default function AdminVaultPage() {
       setMsg("microPullAndNudge done.");
       await refreshPool();
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Failed");
+      toastError(e);
     } finally {
       setBusy(null);
     }

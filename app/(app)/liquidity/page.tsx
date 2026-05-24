@@ -18,6 +18,7 @@ import {
 } from "@/lib/abis/stable-swap-micro-vault";
 import { useBuilderAwareWriteContract } from "@/lib/base/builder-code";
 import { getStableVaultChainById, getStableVaultRpcHttpUrl } from "@/lib/chains";
+import { toastError } from "@/lib/errors";
 import { formatAllowanceHuman } from "@/lib/format-allowance";
 import { formatOnchainError } from "@/lib/format-onchain-error";
 import { requireTxSuccess } from "@/lib/require-tx-success";
@@ -256,9 +257,7 @@ export default function LiquidityPage() {
       });
       setMsg(`${label} approved for vault.`);
     } catch (e) {
-      const text = formatOnchainError(e);
-      setMsg(text);
-      toast.error(text);
+      toastError(e);
       throw e;
     } finally {
       setBusy(null);
@@ -363,10 +362,7 @@ export default function LiquidityPage() {
         ),
       });
     } catch (e) {
-      const text = formatOnchainError(e);
-      setMsg(text);
-      toast.error(text);
-      console.error("[addLiquidity] error", e);
+      toastError(e);
     } finally {
       setBusy(null);
     }
@@ -403,9 +399,7 @@ export default function LiquidityPage() {
         ),
       });
     } catch (e) {
-      const text = formatOnchainError(e);
-      setMsg(text);
-      toast.error(text);
+      toastError(e);
     } finally {
       setBusy(null);
     }
@@ -430,9 +424,7 @@ export default function LiquidityPage() {
       setMsg(`Micro-pull enabled. Approve USDC + ${eurStableSymbol} to the vault for keeper pulls.`);
       toast.success("Micro-pull saved");
     } catch (e) {
-      const text = formatOnchainError(e);
-      setMsg(text);
-      toast.error(text);
+      toastError(e);
     } finally {
       setBusy(null);
     }
@@ -455,9 +447,7 @@ export default function LiquidityPage() {
       setMsg("Micro-pull disabled.");
       toast.success("Micro-pull off");
     } catch (e) {
-      const text = formatOnchainError(e);
-      setMsg(text);
-      toast.error(text);
+      toastError(e);
     } finally {
       setBusy(null);
     }
@@ -607,7 +597,7 @@ export default function LiquidityPage() {
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <Button
                 type="button"
-                variant="outline"
+                variant="brutalPrimary"
                 disabled={busy !== null || approveDisabledReason !== null}
                 onClick={() => void approveToken(tokenUsdc!, "USDC", "approve-usdc").catch(() => {})}
                 title={approveDisabledReason ?? undefined}
@@ -616,7 +606,7 @@ export default function LiquidityPage() {
               </Button>
               <Button
                 type="button"
-                variant="outline"
+                variant="brutalPrimary"
                 disabled={busy !== null || approveDisabledReason !== null}
                 onClick={() => void approveToken(tokenEurc!, eurStableSymbol, "approve-eurc").catch(() => {})}
                 title={approveDisabledReason ?? undefined}
