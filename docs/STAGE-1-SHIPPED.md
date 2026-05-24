@@ -164,6 +164,23 @@ On `(app)` routes (`/swap`, `/forex`, `/stake`, etc.) at desktop widths (≥md b
 
 **Fix priority:** Stage 2 (low — affects desktop only, mobile is the primary surface).
 
+### Base app webview black-screen during transaction popup
+
+**Symptom:** in the Base app's in-app browser, when a transaction approval popup appears, the background page goes black. The transaction itself signs and confirms successfully. After approval, the page does not recover even on refresh — the user must close and reopen Base app to see the completed transaction.
+
+**Status:** intermittent, pre-existing. Not reliably reproducible. Tested immediately after Stage 1 ship and could not reproduce after the first occurrence.
+
+**Suspected cause:** webview state desync between Base app's wallet popup and the React app's render tree. When the popup suspends the webview and resumes it, wagmi/React state may not rehydrate correctly.
+
+**Possible contributors:**
+1. Base app's webview lifecycle (OS-level suspension)
+2. wagmi/RainbowKit state on resume
+3. Possibly Task 6's `BaseAppLandingRedirect` interacting with router state on resume (unverified — needs repro to investigate)
+
+**User impact:** transaction succeeds; UI requires app restart to recover. No funds at risk. Annoying but not catastrophic.
+
+**Investigation plan:** watch for pattern over next 7-14 days of normal use. If reproducible (specific page, specific tx type, specific timing), debug then. If still intermittent and rare, defer indefinitely pending broader Base app SDK fixes.
+
 ---
 
 ## Verification checklist for iPhone walkthrough
