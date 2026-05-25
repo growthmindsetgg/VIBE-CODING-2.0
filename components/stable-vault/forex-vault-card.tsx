@@ -103,6 +103,8 @@ export function ForexVaultCard({
 
   useEffect(() => {
     let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
     async function pull() {
       try {
         const r = await fetch("/api/paper-trade/price", { cache: "no-store" });
@@ -115,11 +117,36 @@ export function ForexVaultCard({
         /* ignore — fall back to 1.0 display */
       }
     }
-    pull();
-    const t = setInterval(pull, 30_000);
+
+    const startPolling = () => {
+      if (intervalId) return;
+      intervalId = setInterval(pull, 30_000);
+    };
+    const stopPolling = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void pull();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+
+    if (typeof document !== "undefined" && document.visibilityState === "visible") {
+      void pull();
+      startPolling();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       cancelled = true;
-      clearInterval(t);
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 

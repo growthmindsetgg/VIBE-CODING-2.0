@@ -64,16 +64,32 @@ export function usePaperTradePrice(): UsePaperTradePriceResult {
   }, [refresh]);
 
   useEffect(() => {
+    // Countdown UI keeps ticking (cheap, no network). The refresh() call
+    // at zero is gated by document visibility so we don't burn API budget
+    // while the tab/webview is suspended.
     const tick = setInterval(() => {
       setCountdown((c) => {
         if (c <= 1) {
-          void refresh();
+          if (typeof document === "undefined" || document.visibilityState === "visible") {
+            void refresh();
+          }
           return POLL_MS / 1000;
         }
         return c - 1;
       });
     }, 1000);
-    return () => clearInterval(tick);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(tick);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [refresh]);
 
   return { price, isLoading, error, countdown, refresh };
