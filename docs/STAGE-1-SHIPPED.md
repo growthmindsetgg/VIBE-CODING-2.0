@@ -164,22 +164,17 @@ On `(app)` routes (`/swap`, `/forex`, `/stake`, etc.) at desktop widths (≥md b
 
 **Fix priority:** Stage 2 (low — affects desktop only, mobile is the primary surface).
 
-### Base app webview black-screen during transaction popup
+### Base App native modal suspends and fails to resume webview
 
-**Symptom:** in the Base app's in-app browser, when a transaction approval popup appears, the background page goes black. The transaction itself signs and confirms successfully. After approval, the page does not recover even on refresh — the user must close and reopen Base app to see the completed transaction.
+**Symptom:** When a transaction popup appears in Base App's in-app browser, the Base App presents a native modal sheet (trade confirmation, signature request, etc.) on top of the dapp. While the modal is visible, Base App dims and suspends the underlying webview. After the user taps Trade now/Confirm and the modal dismisses, **Base App fails to properly resume the suspended webview** — leaving the user looking at the still-dimmed webview, which appears as a black screen. Refresh inside the suspended webview does not recover; only closing the dapp tab and reopening forces Base App to re-mount the webview from scratch.
 
-**Status:** intermittent, pre-existing. Not reliably reproducible. Tested immediately after Stage 1 ship and could not reproduce after the first occurrence.
+**Status:** Confirmed Base App platform bug. The transaction itself executes and confirms on-chain successfully — only the post-modal webview resume is broken. Not fixable from JavaScript/app code.
 
-**Suspected cause:** webview state desync between Base app's wallet popup and the React app's render tree. When the popup suspends the webview and resumes it, wagmi/React state may not rehydrate correctly.
+**Mitigation shipped:** pollers now pause when webview is hidden (commit on `hotfix-base-app-blackout` branch). Reduces resume-time burst that may worsen the symptom in some cases. Does not fix the underlying issue.
 
-**Possible contributors:**
-1. Base app's webview lifecycle (OS-level suspension)
-2. wagmi/RainbowKit state on resume
-3. Possibly Task 6's `BaseAppLandingRedirect` interacting with router state on resume (unverified — needs repro to investigate)
+**Recovery improvement deferred to Stage 2+3:** floating "Refresh page" pill that detects stuck-after-resume state and offers a one-tap reload. Will live in the broader UX polish work.
 
-**User impact:** transaction succeeds; UI requires app restart to recover. No funds at risk. Annoying but not catastrophic.
-
-**Investigation plan:** watch for pattern over next 7-14 days of normal use. If reproducible (specific page, specific tx type, specific timing), debug then. If still intermittent and rare, defer indefinitely pending broader Base app SDK fixes.
+**Upstream:** should be filed as a Base App SDK bug with Coinbase developer support. Provide screenshots showing the URL stays `vibefunds.app` while the page renders as black. Workaround documentation for users may also be appropriate (small inline help text: "If your screen stays dark after a transaction, swipe down to close the dapp tab and reopen it.")
 
 ---
 
