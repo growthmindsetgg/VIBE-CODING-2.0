@@ -181,6 +181,33 @@ On `(app)` routes (`/swap`, `/forex`, `/stake`, etc.) at desktop widths (≥md b
 
 **Investigation plan:** watch for pattern over next 7-14 days of normal use. If reproducible (specific page, specific tx type, specific timing), debug then. If still intermittent and rare, defer indefinitely pending broader Base app SDK fixes.
 
+### Builder Code suffix wiring for MCP API routes
+
+Currently the MCP plugin's prepare-* routes return unsigned calldata WITHOUT the `BASE_BUILDER_DATA_SUFFIX` appended. This means MCP-driven transactions don't carry VibeFunds attribution on Base.
+
+**Why deferred:** Builder Code is the highest-risk piece to touch under deadline pressure — any bug would silently break attribution across the entire production app (Swap, Stake, Forex). Attribution rewards from MCP-driven volume in the first ~2 weeks will be negligible vs. the cost of breaking in-app attribution. The demo and contest viability don't depend on it.
+
+**Fix plan (~10 lines of code, ~30 min including testing):**
+1. Extract `BASE_BUILDER_DATA_SUFFIX` and `BUILDER_CODE` constants from `lib/base/builder-code.ts` (`"use client"` module) into a new server-safe `lib/base/builder-suffix.ts`
+2. Re-export from `builder-code.ts` so existing consumers (the `useBuilderAwareWriteContract` hook) are unchanged
+3. Add `withBuilderSuffix(data, chainId)` helper in `app/api/mcp/_lib/encode.ts` — appends suffix for Base, passthrough for Monad
+4. Apply `withBuilderSuffix()` to action-step calldata (NOT approve) in `prepare-stake`, `prepare-forex-agent`, `prepare-swap` routes
+5. Run `npm run build` to verify no client/server boundary leaks
+6. Test with a real MCP-driven Base transaction and check base.dev attribution shows up
+
+**Schedule:** after Stage 2+3 ships (~2 weeks from May 31, 2026)
+**Risk if not done:** minor — only impacts onchain attribution rewards from MCP-driven transactions. No user-facing impact.
+
+---
+
+## MCP Plugin Demo Prep Checklist (do before recording — 2026-05-31)
+
+- [ ] Set `NEXT_PUBLIC_BASE_RPC_URL` to a private endpoint (Alchemy / Infura / QuickNode) BEFORE recording the demo video. The public `https://mainnet.base.org` rate-limits parallel reads (`code: -32016 "over rate limit"`) and would break `check-agent-status` mid-recording — verified live during Phase 2 build. Same env var is used by the rest of the app, so this is a one-line swap.
+- [ ] Set equivalent private RPC for Monad if not already configured (`NEXT_PUBLIC_MONAD_RPC_URL`). Public Monad RPC has the same risk profile.
+- [ ] Verify Claude Desktop has Base MCP installed and authenticated against the funded Base Account.
+- [ ] Verify the demo wallet has $5–10 USDC on Base mainnet for the live `prepare-forex-agent` deposit demo.
+- [ ] Have `/api/mcp/check-agent-status` open in a browser tab as a fallback — shows real live agent state if the MCP call has any hiccup during recording.
+
 ---
 
 ## Verification checklist for iPhone walkthrough
